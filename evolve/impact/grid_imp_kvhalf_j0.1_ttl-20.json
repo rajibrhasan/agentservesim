@@ -1,0 +1,27 @@
+{
+ "ttl-20": {
+  "imp_kvhalf_j0.1": {
+   "attempts": 1,
+   "cell": "imp_kvhalf_j0.1",
+   "decisions": {
+    "evict": 0,
+    "none": 0,
+    "protect": 1674,
+    "release": 1644
+   },
+   "error": null,
+   "flags": [
+    "--retention",
+    "ttl",
+    "--retention-tau",
+    "20"
+   ],
+   "jct_mean": 3532.3265591293,
+   "jct_p50": 2873.847392677,
+   "jct_p99": 8237.739064367,
+   "n": 30,
+   "stderr_tail": "INFO:    underlay of /etc/localtime required more than 50 (102) bind mounts\n",
+   "wall_s": 1575.7
+  }
+ }
+}

@@ -1,0 +1,25 @@
+{
+ "cache-lru": {
+  "imp_g16_j0.1": {
+   "attempts": 1,
+   "cell": "imp_g16_j0.1",
+   "decisions": {
+    "evict": 0,
+    "none": 1674,
+    "protect": 0,
+    "release": 0
+   },
+   "error": null,
+   "flags": [
+    "--retention",
+    "cache-lru"
+   ],
+   "jct_mean": 2896.719048728067,
+   "jct_p50": 2543.983994659,
+   "jct_p99": 6784.948451168,
+   "n": 30,
+   "stderr_tail": "INFO:    underlay of /etc/localtime required more than 50 (102) bind mounts\nINFO:    Terminating squashfuse_ll after timeout\nINFO:    Timeouts can be caused by a running background process\n",
+   "wall_s": 1018.2
+  }
+ }
+}

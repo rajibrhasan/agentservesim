@@ -1,0 +1,27 @@
+{
+ "ttl-20": {
+  "rtx70b_f30_j0.1": {
+   "attempts": 1,
+   "cell": "rtx70b_f30_j0.1",
+   "decisions": {
+    "evict": 0,
+    "none": 0,
+    "protect": 1674,
+    "release": 1644
+   },
+   "error": null,
+   "flags": [
+    "--retention",
+    "ttl",
+    "--retention-tau",
+    "20"
+   ],
+   "jct_mean": 2539.6779287943336,
+   "jct_p50": 2097.708350171,
+   "jct_p99": 6172.93806147,
+   "n": 30,
+   "stderr_tail": "INFO:    underlay of /etc/localtime required more than 50 (102) bind mounts\n",
+   "wall_s": 849.2
+  }
+ }
+}

@@ -1,0 +1,27 @@
+{
+ "lru-plas": {
+  "imp_kvhalf_j0.1": {
+   "attempts": 1,
+   "cell": "imp_kvhalf_j0.1",
+   "decisions": {
+    "evict": 0,
+    "none": 1674,
+    "protect": 0,
+    "release": 0
+   },
+   "error": null,
+   "flags": [
+    "--retention",
+    "cache-lru",
+    "--scheduling",
+    "plas"
+   ],
+   "jct_mean": 3689.1267618066663,
+   "jct_p50": 3351.923396812,
+   "jct_p99": 8959.918585459,
+   "n": 30,
+   "stderr_tail": "INFO:    underlay of /etc/localtime required more than 50 (102) bind mounts\n",
+   "wall_s": 1902.5
+  }
+ }
+}

@@ -1,0 +1,50 @@
+{
+ "ttl-5": {
+  "rtx70b_swe20_j0.06": {
+   "attempts": 1,
+   "cell": "rtx70b_swe20_j0.06",
+   "decisions": {
+    "evict": 0,
+    "none": 0,
+    "protect": 797,
+    "release": 777
+   },
+   "error": null,
+   "flags": [
+    "--retention",
+    "ttl",
+    "--retention-tau",
+    "5"
+   ],
+   "jct_mean": 234.39814776869997,
+   "jct_p50": 219.888642703,
+   "jct_p99": 738.70415937,
+   "n": 20,
+   "stderr_tail": "INFO:    underlay of /etc/localtime required more than 50 (102) bind mounts\nINFO:    Cleanup error: while stopping driver for /var/lib/apptainer/mnt/session/rootfs: squashfuse_ll exited: fuse: reading device: Software caused connection abort\n",
+   "wall_s": 605.7
+  },
+  "rtx70b_swe50_j0.02": {
+   "attempts": 1,
+   "cell": "rtx70b_swe50_j0.02",
+   "decisions": {
+    "evict": 0,
+    "none": 0,
+    "protect": 2873,
+    "release": 2823
+   },
+   "error": null,
+   "flags": [
+    "--retention",
+    "ttl",
+    "--retention-tau",
+    "5"
+   ],
+   "jct_mean": 3729.06490762216,
+   "jct_p50": 2634.347902926,
+   "jct_p99": 11081.737055716,
+   "n": 50,
+   "stderr_tail": "INFO:    underlay of /etc/localtime required more than 50 (102) bind mounts\nINFO:    Terminating squashfuse_ll after timeout\nINFO:    Timeouts can be caused by a running background process\n",
+   "wall_s": 3063.7
+  }
+ }
+}

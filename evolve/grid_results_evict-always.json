@@ -1,0 +1,38 @@
+{
+ "evict-always": {
+  "rtx70b_swe20_j0.06": {
+   "attempts": 1,
+   "cell": "rtx70b_swe20_j0.06",
+   "decisions": null,
+   "error": "simulator exit 1",
+   "flags": [
+    "--retention",
+    "evict-always",
+    "--no-enable-prefix-caching"
+   ],
+   "jct_mean": null,
+   "jct_p50": null,
+   "jct_p99": null,
+   "n": 0,
+   "stderr_tail": "INFO:    underlay of /etc/localtime required more than 50 (102) bind mounts\nTraceback (most recent call last):\n  File \"/usr/lib/python3.10/runpy.py\", line 196, in _run_module_as_main\n    return _run_code(code, main_globals, None,\n  File \"/usr/lib/python3.10/runpy.py\", line 86, in _run_code\n    exec(code, run_globals)\n  File \"/app/LLMServingSim/serving/__main__.py\", line 1249, in <module>\n    main()\n  File \"/app/LLMServingSim/serving/__main__.py\", line 879, in main\n    _mm = _sc.memory; _c = _mm.npu_prefix_cache\nAttributeError: 'MemoryModel' object has no attribute 'npu_prefix_cache'. Did you mean: 'free_prefix_cache'?\n\n--- stdout tail ---\n |  |  \\/  / __| ___ _ ___ _(_)_ _  __ _/ __(_)_ __ |_  ) /  \\       \n     | |__| |__| |\\/| \\__ \\/ -_) '_\\ V / | ' \\/ _` \\__ \\ | '  \\ / / | () |      \n     |____|____|_|  |_|___/\\___|_|  \\_/|_|_||_\\__, |___/_|_|_|_/___(_)__/       \n                                              |___/                             \n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n                              Input configuration                               \n\n  \u2022 Cluster config             : experiments/validation/cluster_rtx6000_70b.json\n  \u2022 Run ID                     : run_1787844826798585_2640845\n  \u2022 ASTRA-Sim inputs root      : /dev/shm/evolve_grid_40398844_1/in_7e743ab16d\n  \u2022 Dataset                    : workloads/swebench/evolve/swebench20_jps0.06_n20.jsonl\n  \u2022 Max num seqs               : 128\n  \u2022 Max batched tokens         : 16384\n  \u2022 Block size (tokens)        : 16\n  \u2022 Request routing            : LOAD\n  \u2022 Expert routing             : BALANCED\n  \u2022 Prefix caching             : DISABLED\n  \u2022 Chunked prefill            : ENABLED\n  \u2022 Prefix caching scheme      : xPU-Only\n  \u2022 Centralized prefix caching : DISABLED\n  \u2022 Offload attention to PIM   : DISABLED\n  \u2022 Sub-batch interleaving     : DISABLED\n  \u2022 Prioritize prefill         : DISABLED\n  \u2022 Network backend            : analytical\n  \u2022 Log interval (s)           : 1.0\n  \u2022 Log level                  : WARNING\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\u25b6 Starting simulation...\n\n",
+   "wall_s": 31.3
+  },
+  "rtx70b_swe50_j0.02": {
+   "attempts": 1,
+   "cell": "rtx70b_swe50_j0.02",
+   "decisions": null,
+   "error": "simulator exit 1",
+   "flags": [
+    "--retention",
+    "evict-always",
+    "--no-enable-prefix-caching"
+   ],
+   "jct_mean": null,
+   "jct_p50": null,
+   "jct_p99": null,
+   "n": 0,
+   "stderr_tail": "INFO:    underlay of /etc/localtime required more than 50 (102) bind mounts\nTraceback (most recent call last):\n  File \"/usr/lib/python3.10/runpy.py\", line 196, in _run_module_as_main\n    return _run_code(code, main_globals, None,\n  File \"/usr/lib/python3.10/runpy.py\", line 86, in _run_code\n    exec(code, run_globals)\n  File \"/app/LLMServingSim/serving/__main__.py\", line 1249, in <module>\n    main()\n  File \"/app/LLMServingSim/serving/__main__.py\", line 879, in main\n    _mm = _sc.memory; _c = _mm.npu_prefix_cache\nAttributeError: 'MemoryModel' object has no attribute 'npu_prefix_cache'. Did you mean: 'free_prefix_cache'?\n\n--- stdout tail ---\n   | |  | |  |  \\/  / __| ___ _ ___ _(_)_ _  __ _/ __(_)_ __ |_  ) /  \\       \n     | |__| |__| |\\/| \\__ \\/ -_) '_\\ V / | ' \\/ _` \\__ \\ | '  \\ / / | () |      \n     |____|____|_|  |_|___/\\___|_|  \\_/|_|_||_\\__, |___/_|_|_|_/___(_)__/       \n                                              |___/                             \n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n                              Input configuration                               \n\n  \u2022 Cluster config             : experiments/validation/cluster_rtx6000_70b.json\n  \u2022 Run ID                     : run_1787844832394820_2669087\n  \u2022 ASTRA-Sim inputs root      : /dev/shm/evolve_grid_40398844_1/in_50402f62da\n  \u2022 Dataset                    : workloads/swebench/swebench_jps0.02_n50.jsonl\n  \u2022 Max num seqs               : 128\n  \u2022 Max batched tokens         : 16384\n  \u2022 Block size (tokens)        : 16\n  \u2022 Request routing            : LOAD\n  \u2022 Expert routing             : BALANCED\n  \u2022 Prefix caching             : DISABLED\n  \u2022 Chunked prefill            : ENABLED\n  \u2022 Prefix caching scheme      : xPU-Only\n  \u2022 Centralized prefix caching : DISABLED\n  \u2022 Offload attention to PIM   : DISABLED\n  \u2022 Sub-batch interleaving     : DISABLED\n  \u2022 Prioritize prefill         : DISABLED\n  \u2022 Network backend            : analytical\n  \u2022 Log interval (s)           : 1.0\n  \u2022 Log level                  : WARNING\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\u25b6 Starting simulation...\n\n",
+   "wall_s": 5.8
+  }
+ }
+}

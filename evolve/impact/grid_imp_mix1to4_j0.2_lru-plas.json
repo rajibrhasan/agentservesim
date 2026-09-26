@@ -1,0 +1,27 @@
+{
+ "lru-plas": {
+  "imp_mix1to4_j0.2": {
+   "attempts": 1,
+   "cell": "imp_mix1to4_j0.2",
+   "decisions": {
+    "evict": 0,
+    "none": 669,
+    "protect": 0,
+    "release": 0
+   },
+   "error": null,
+   "flags": [
+    "--retention",
+    "cache-lru",
+    "--scheduling",
+    "plas"
+   ],
+   "jct_mean": 217.43820158393999,
+   "jct_p50": 94.314474378,
+   "jct_p99": 787.281686676,
+   "n": 50,
+   "stderr_tail": "INFO:    underlay of /etc/localtime required more than 50 (102) bind mounts\n",
+   "wall_s": 317.8
+  }
+ }
+}

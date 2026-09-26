@@ -1,0 +1,29 @@
+{
+ "ttl2-cont": {
+  "lb20_j0.1": {
+   "attempts": 1,
+   "cell": "lb20_j0.1",
+   "decisions": {
+    "evict": 0,
+    "none": 0,
+    "protect": 913,
+    "release": 893
+   },
+   "error": null,
+   "flags": [
+    "--retention",
+    "ttl",
+    "--retention-tau",
+    "2",
+    "--scheduling",
+    "continuum"
+   ],
+   "jct_mean": 4115.91039691655,
+   "jct_p50": 4995.307703155,
+   "jct_p99": 5687.716208067,
+   "n": 20,
+   "stderr_tail": "INFO:    underlay of /etc/localtime required more than 50 (102) bind mounts\n",
+   "wall_s": 1908.6
+  }
+ }
+}

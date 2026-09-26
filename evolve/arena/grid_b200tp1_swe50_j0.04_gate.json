@@ -1,0 +1,44 @@
+{
+ "gate": {
+  "b200tp1_swe50_j0.04": {
+   "cell": "b200tp1_swe50_j0.04",
+   "outdir": null,
+   "flags": [
+    "--retention",
+    "evolved",
+    "--scheduling",
+    "evolved"
+   ],
+   "wall_s": 2194.1,
+   "jct_mean": 1213.2352991922,
+   "jct_p50": 777.009515216,
+   "jct_p99": 3612.434637498,
+   "n": 50,
+   "decisions": {
+    "protect": 2873,
+    "evict": 0,
+    "release": 2823,
+    "none": 0
+   },
+   "error": null,
+   "stderr_tail": "INFO:    underlay of /etc/localtime required more than 50 (102) bind mounts\n",
+   "mechanism": {
+    "protected": 2407330,
+    "released": 1939316,
+    "unparked_by_hit": 0,
+    "reclaimed_expired": 79273,
+    "reclaimed_forced": 388741,
+    "victim_overrides": 0,
+    "admission_holds": 412160,
+    "admission_releases": 0,
+    "reclaimed_expired_chunk": 72334,
+    "reclaimed_forced_chunk": 383746,
+    "reclaimed_expired_head_full": 6939,
+    "reclaimed_forced_head_full": 4995,
+    "currently_protected": 0,
+    "stamps": 2873
+   },
+   "attempts": 1
+  }
+ }
+}

@@ -1,0 +1,29 @@
+{
+ "ttl2-plas": {
+  "imp_mix1to4_j0.1": {
+   "attempts": 1,
+   "cell": "imp_mix1to4_j0.1",
+   "decisions": {
+    "evict": 0,
+    "none": 0,
+    "protect": 669,
+    "release": 619
+   },
+   "error": null,
+   "flags": [
+    "--retention",
+    "ttl",
+    "--retention-tau",
+    "2",
+    "--scheduling",
+    "plas"
+   ],
+   "jct_mean": 103.92248274416,
+   "jct_p50": 55.817187606,
+   "jct_p99": 493.410004137,
+   "n": 50,
+   "stderr_tail": "INFO:    underlay of /etc/localtime required more than 50 (102) bind mounts\n",
+   "wall_s": 323.1
+  }
+ }
+}

@@ -1,0 +1,57 @@
+max_iterations: 50
+checkpoint_interval: 5
+log_level: INFO
+random_seed: 42
+diff_based_evolution: true
+max_code_length: 24000
+language: python
+llm:
+  api_base: https://openrouter.ai/api/v1
+  models:
+  - name: anthropic/claude-sonnet-5
+    weight: 0.5
+  - name: openai/gpt-5.6-sol
+    weight: 0.5
+  temperature: 1.0
+  max_tokens: 8000
+  timeout: 1200
+  retries: 2
+prompt:
+  system_message: |
+    You are improving the serving policy of an LLM serving system that serves agent programs: multi-turn workloads where each turn is a model call followed by a tool execution (a shell command, a web search, a code run) during which the program is idle but its context may stay cached.
+    
+    You edit only the code between the EVOLVE-BLOCK markers. It holds one class per plane, and you may edit, add or delete any of them:
+      EvolvedRetention  — at the end of every turn (on_turn_complete) decide whether the program's KV cache is protected until a deadline, evicted now, or left to the ordinary LRU queue; on the next arrival (on_turn_arrival) release a standing protection.
+      EvolvedScheduling — priority(pcb, now) stamps queue order for a waiting turn, lower first. victim() picks which running request to preempt under memory pressure; admit() gates a waiting turn. Leave victim/admit undefined to keep the engine's rule.
+      EvolvedRouting    — route(pcb, now) picks the instance a turn runs on. A turn routed away from its cached context re-prefills it.
+    A plane with no class falls back to the engine's own rule, which is a legal policy. The classes never see each other; where they interact they do it through the PCB, as a scheduler reading pcb.kv_protected, which the retention policy set.
+    
+    Each method observes only the Program Control Block passed in and the current time. It never sees how long the tool gap will last; it must predict that from turn index, tool name, context size, and what it has observed on earlier arrivals. Reading pcb.program_id or pcb.kv_request_id, keeping per-program tables, importing anything beyond math/statistics/collections/typing/dataclasses and the policy modules, and using the filesystem, clock, or randomness are rejected by a static check before simulation.
+    
+    Fitness is stock-JCT divided by candidate-JCT, averaged over cells that vary arrival rate and KV budget; 1.0 is parity with the stock LRU + FCFS configuration. The cells and decision counts from the last evaluation are given as artifacts. Protecting long contexts across short gaps saves re-prefill; protecting across long gaps or under a tight KV budget starves other programs and forces reclaims. Protected blocks still occupy the pool. Tool names carry information about gap length. Deadlines that are too short lose the protection exactly when it would have paid off; deadlines that are too long hold memory nothing will use.
+    
+    Make one substantive change per attempt, keep each class small and readable, and prefer decision rules whose inputs you can name over opaque constants.
+  num_top_programs: 2
+  num_diverse_programs: 1
+  include_artifacts: true
+database:
+  population_size: 40
+  archive_size: 20
+  num_islands: 2
+  elite_selection_ratio: 0.2
+  exploration_ratio: 0.3
+  exploitation_ratio: 0.6
+  migration_interval: 10
+  feature_dimensions:
+  - protect_frac
+  - evict_frac
+  feature_bins: 5
+evaluator:
+  timeout: 5400
+  max_retries: 1
+  cascade_evaluation: true
+  cascade_thresholds:
+  - 0.95
+  - 0.98
+  parallel_evaluations: 3
+  enable_artifacts: true

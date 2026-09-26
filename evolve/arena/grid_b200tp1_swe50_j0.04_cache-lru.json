@@ -1,0 +1,38 @@
+{
+ "cache-lru": {
+  "b200tp1_swe50_j0.04": {
+   "attempts": 1,
+   "cell": "b200tp1_swe50_j0.04",
+   "decisions": {
+    "evict": 0,
+    "none": 2873,
+    "protect": 0,
+    "release": 0
+   },
+   "error": null,
+   "flags": [
+    "--retention",
+    "cache-lru"
+   ],
+   "jct_mean": 1940.87890307094,
+   "jct_p50": 1562.328474095,
+   "jct_p99": 5739.734736341,
+   "mechanism": {
+    "admission_holds": 0,
+    "admission_releases": 0,
+    "currently_protected": 0,
+    "protected": 0,
+    "reclaimed_expired": 0,
+    "reclaimed_forced": 0,
+    "released": 0,
+    "stamps": 0,
+    "unparked_by_hit": 0,
+    "victim_overrides": 0
+   },
+   "n": 50,
+   "outdir": null,
+   "stderr_tail": "INFO:    underlay of /etc/localtime required more than 50 (102) bind mounts\n",
+   "wall_s": 3053.1
+  }
+ }
+}

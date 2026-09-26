@@ -1,0 +1,25 @@
+{
+ "cache-lru": {
+  "lb40_j0.1": {
+   "attempts": 1,
+   "cell": "lb40_j0.1",
+   "decisions": {
+    "evict": 0,
+    "none": 1708,
+    "protect": 0,
+    "release": 0
+   },
+   "error": null,
+   "flags": [
+    "--retention",
+    "cache-lru"
+   ],
+   "jct_mean": 7472.8847313238,
+   "jct_p50": 7370.876253944,
+   "jct_p99": 10595.401371501,
+   "n": 40,
+   "stderr_tail": "INFO:    underlay of /etc/localtime required more than 50 (102) bind mounts\n",
+   "wall_s": 2801.0
+  }
+ }
+}

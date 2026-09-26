@@ -1,0 +1,29 @@
+{
+ "saga-plas": {
+  "lb60_j0.1": {
+   "attempts": 1,
+   "cell": "lb60_j0.1",
+   "decisions": {
+    "evict": 0,
+    "none": 0,
+    "protect": 2651,
+    "release": 2591
+   },
+   "error": null,
+   "flags": [
+    "--retention",
+    "saga-ttl",
+    "--retention-tau",
+    "2",
+    "--scheduling",
+    "plas"
+   ],
+   "jct_mean": 11488.5719887318,
+   "jct_p50": 12281.803375878,
+   "jct_p99": 16483.97806888,
+   "n": 60,
+   "stderr_tail": "INFO:    underlay of /etc/localtime required more than 50 (102) bind mounts\nINFO:    Terminating squashfuse_ll after timeout\nINFO:    Timeouts can be caused by a running background process\n",
+   "wall_s": 5470.2
+  }
+ }
+}

@@ -1,0 +1,54 @@
+{
+ "ttl2-plas": {
+  "rtx70b_swe20_j0.06": {
+   "attempts": 1,
+   "cell": "rtx70b_swe20_j0.06",
+   "decisions": {
+    "evict": 0,
+    "none": 0,
+    "protect": 797,
+    "release": 777
+   },
+   "error": null,
+   "flags": [
+    "--retention",
+    "ttl",
+    "--retention-tau",
+    "2",
+    "--scheduling",
+    "plas"
+   ],
+   "jct_mean": 233.99434344515004,
+   "jct_p50": 219.2428827,
+   "jct_p99": 738.108100441,
+   "n": 20,
+   "stderr_tail": "INFO:    underlay of /etc/localtime required more than 50 (102) bind mounts\nINFO:    Terminating squashfuse_ll after timeout\nINFO:    Timeouts can be caused by a running background process\n",
+   "wall_s": 601.6
+  },
+  "rtx70b_swe50_j0.02": {
+   "attempts": 1,
+   "cell": "rtx70b_swe50_j0.02",
+   "decisions": {
+    "evict": 0,
+    "none": 0,
+    "protect": 2873,
+    "release": 2823
+   },
+   "error": null,
+   "flags": [
+    "--retention",
+    "ttl",
+    "--retention-tau",
+    "2",
+    "--scheduling",
+    "plas"
+   ],
+   "jct_mean": 3613.41978355736,
+   "jct_p50": 2514.979842368,
+   "jct_p99": 11171.011222879,
+   "n": 50,
+   "stderr_tail": "INFO:    underlay of /etc/localtime required more than 50 (102) bind mounts\nINFO:    Terminating squashfuse_ll after timeout\nINFO:    Timeouts can be caused by a running background process\n",
+   "wall_s": 3481.3
+  }
+ }
+}

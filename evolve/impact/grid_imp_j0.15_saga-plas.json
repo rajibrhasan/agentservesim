@@ -1,0 +1,29 @@
+{
+ "saga-plas": {
+  "imp_j0.15": {
+   "attempts": 1,
+   "cell": "imp_j0.15",
+   "decisions": {
+    "evict": 0,
+    "none": 0,
+    "protect": 1674,
+    "release": 1644
+   },
+   "error": null,
+   "flags": [
+    "--retention",
+    "saga-ttl",
+    "--retention-tau",
+    "2",
+    "--scheduling",
+    "plas"
+   ],
+   "jct_mean": 2866.6421964718666,
+   "jct_p50": 3013.5435425,
+   "jct_p99": 5942.726259327,
+   "n": 30,
+   "stderr_tail": "INFO:    underlay of /etc/localtime required more than 50 (102) bind mounts\n",
+   "wall_s": 904.4
+  }
+ }
+}

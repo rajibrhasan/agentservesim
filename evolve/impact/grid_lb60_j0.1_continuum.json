@@ -1,0 +1,22 @@
+{
+ "continuum": {
+  "lb60_j0.1": {
+   "attempts": 1,
+   "cell": "lb60_j0.1",
+   "decisions": null,
+   "error": "simulator exit 1",
+   "flags": [
+    "--retention",
+    "continuum",
+    "--scheduling",
+    "continuum"
+   ],
+   "jct_mean": null,
+   "jct_p50": null,
+   "jct_p99": null,
+   "n": 0,
+   "stderr_tail": "py\", line 196, in _run_module_as_main\n    return _run_code(code, main_globals, None,\n  File \"/usr/lib/python3.10/runpy.py\", line 86, in _run_code\n    exec(code, run_globals)\n  File \"/app/LLMServingSim/serving/__main__.py\", line 1254, in <module>\n    main()\n  File \"/app/LLMServingSim/serving/__main__.py\", line 1096, in main\n    raise RuntimeError(\"scheduler stuck: no runnable batch, nothing in flight, no future arrival, \"\nRuntimeError: scheduler stuck: no runnable batch, nothing in flight, no future arrival, but requests pending\ninstance 0: 39 pending, inflight 0; npu used 85054MB of 85217MB (weights 67287MB), reserved 0MB, cache total 113712 tok evictable 19472 locked 94240 parked 0 tok\n  req1287: input=9391 computed=0 out=10040 hit=0 locked=False evict=False arrival=11416880212672\n  req1043: input=24762 computed=0 out=24877 hit=0 locked=False evict=False arrival=11756407792465\n  req1081: input=22828 computed=0 out=23197 hit=0 locked=False evict=False arrival=11773483623317\n  req1116: input=22830 computed=0 out=23313 hit=0 locked=False evict=False arrival=11773975816743\n  req1164: input=14309 computed=0 out=14479 hit=0 locked=False evict=False arrival=11776243655739\n  req1190: input=11588 computed=0 out=11685 hit=0 locked=False evict=False arrival=11771756214208\n  req1228: input=14018 computed=0 out=14118 hit=0 locked=False evict=False arrival=11777369473726\n  req1251: input=11404 computed=0 out=11551 hit=0 locked=False evict=False arrival=11808244425314\n\n--- stdout tail ---\nMB (98.488 % Used), Prefix Cache Hit ratio 42.18 %, (6579024 / 15597150)\n            \u2514\u2500Node[0]: Total CPU Memory Usage 0.00 MB, 0.000 % Used \n[11807.0s] Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 21.0 tokens/s\n            \u251c\u2500Running Instance[0]: 1 reqs, Waiting: 38 reqs, Total # 2 NPUs, Each NPU Memory Usage 83929.02 MB (98.488 % Used), Prefix Cache Hit ratio 42.18 %, (6579024 / 15597150)\n            \u2514\u2500Node[0]: Total CPU Memory Usage 0.00 MB, 0.000 % Used \n[11808.0s] Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 20.0 tokens/s\n            \u251c\u2500Running Instance[0]: 1 reqs, Waiting: 38 reqs, Total # 2 NPUs, Each NPU Memory Usage 83929.02 MB (98.488 % Used), Prefix Cache Hit ratio 42.18 %, (6579024 / 15597150)\n            \u2514\u2500Node[0]: Total CPU Memory Usage 0.00 MB, 0.000 % Used \n[11809.0s] Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 2.0 tokens/s\n            \u251c\u2500Running Instance[0]: 2 reqs, Waiting: 37 reqs, Total # 2 NPUs, Each NPU Memory Usage 82499.02 MB (96.810 % Used), Prefix Cache Hit ratio 42.18 %, (6579024 / 15597150)\n            \u2514\u2500Node[0]: Total CPU Memory Usage 0.00 MB, 0.000 % Used \n[11810.0s] Avg prompt throughput: 17168.0 tokens/s, Avg generation throughput: 1.0 tokens/s\n            \u251c\u2500Running Instance[0]: 0 reqs, Waiting: 39 reqs, Total # 2 NPUs, Each NPU Memory Usage 85054.02 MB (99.808 % Used), Prefix Cache Hit ratio 42.11 %, (6579024 / 15621912)\n            \u2514\u2500Node[0]: Total CPU Memory Usage 0.00 MB, 0.000 % Used \n",
+   "wall_s": 9055.2
+  }
+ }
+}

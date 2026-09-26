@@ -1,0 +1,96 @@
+{
+ "saga-fcfs": {
+  "rtx70b_f30_j0.02": {
+   "attempts": 1,
+   "cell": "rtx70b_f30_j0.02",
+   "decisions": {
+    "evict": 0,
+    "none": 0,
+    "protect": 1674,
+    "release": 1644
+   },
+   "error": null,
+   "flags": [
+    "--retention",
+    "saga-ttl",
+    "--retention-tau",
+    "2"
+   ],
+   "jct_mean": 1150.9510410043333,
+   "jct_p50": 284.149337568,
+   "jct_p99": 4382.04871593,
+   "n": 30,
+   "stderr_tail": "INFO:    underlay of /etc/localtime required more than 50 (102) bind mounts\n",
+   "wall_s": 1451.1
+  },
+  "rtx70b_f30_j0.1": {
+   "attempts": 1,
+   "cell": "rtx70b_f30_j0.1",
+   "decisions": {
+    "evict": 0,
+    "none": 0,
+    "protect": 1674,
+    "release": 1644
+   },
+   "error": null,
+   "flags": [
+    "--retention",
+    "saga-ttl",
+    "--retention-tau",
+    "2"
+   ],
+   "jct_mean": 2532.455706843267,
+   "jct_p50": 2121.675002891,
+   "jct_p99": 6132.07963687,
+   "n": 30,
+   "stderr_tail": "INFO:    underlay of /etc/localtime required more than 50 (102) bind mounts\n",
+   "wall_s": 1019.5
+  },
+  "rtx70b_swe50_j0.02": {
+   "attempts": 1,
+   "cell": "rtx70b_swe50_j0.02",
+   "decisions": {
+    "evict": 0,
+    "none": 0,
+    "protect": 2873,
+    "release": 2823
+   },
+   "error": null,
+   "flags": [
+    "--retention",
+    "saga-ttl",
+    "--retention-tau",
+    "2"
+   ],
+   "jct_mean": 3741.9984978224,
+   "jct_p50": 2681.062655277,
+   "jct_p99": 11021.068020942,
+   "n": 50,
+   "stderr_tail": "INFO:    underlay of /etc/localtime required more than 50 (102) bind mounts\n",
+   "wall_s": 2917.7
+  },
+  "rtx70b_swe50_j0.1": {
+   "attempts": 1,
+   "cell": "rtx70b_swe50_j0.1",
+   "decisions": {
+    "evict": 0,
+    "none": 0,
+    "protect": 2873,
+    "release": 2823
+   },
+   "error": null,
+   "flags": [
+    "--retention",
+    "saga-ttl",
+    "--retention-tau",
+    "2"
+   ],
+   "jct_mean": 5345.53673380514,
+   "jct_p50": 4335.783875314,
+   "jct_p99": 12363.647515176,
+   "n": 50,
+   "stderr_tail": "INFO:    underlay of /etc/localtime required more than 50 (102) bind mounts\n",
+   "wall_s": 2443.0
+  }
+ }
+}

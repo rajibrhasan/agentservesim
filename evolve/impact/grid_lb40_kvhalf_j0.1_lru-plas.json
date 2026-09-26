@@ -1,0 +1,27 @@
+{
+ "lru-plas": {
+  "lb40_kvhalf_j0.1": {
+   "attempts": 1,
+   "cell": "lb40_kvhalf_j0.1",
+   "decisions": {
+    "evict": 0,
+    "none": 1708,
+    "protect": 0,
+    "release": 0
+   },
+   "error": null,
+   "flags": [
+    "--retention",
+    "cache-lru",
+    "--scheduling",
+    "plas"
+   ],
+   "jct_mean": 10088.399609140824,
+   "jct_p50": 10917.968552979,
+   "jct_p99": 14720.602142986,
+   "n": 40,
+   "stderr_tail": "INFO:    underlay of /etc/localtime required more than 50 (102) bind mounts\nINFO:    Terminating squashfuse_ll after timeout\nINFO:    Timeouts can be caused by a running background process\n",
+   "wall_s": 7933.5
+  }
+ }
+}

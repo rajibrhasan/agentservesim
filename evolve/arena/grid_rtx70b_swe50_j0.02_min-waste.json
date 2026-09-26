@@ -1,0 +1,41 @@
+{
+ "min-waste": {
+  "rtx70b_swe50_j0.02": {
+   "attempts": 1,
+   "cell": "rtx70b_swe50_j0.02",
+   "decisions": {
+    "evict": 2069,
+    "none": 0,
+    "protect": 804,
+    "release": 785
+   },
+   "error": null,
+   "flags": [
+    "--retention",
+    "min-waste",
+    "--min-waste-profile",
+    "/app/agentservesim/harness/profiles/infercept_profile_rtx6000_70B_tp2.json"
+   ],
+   "jct_mean": 5060.69594470786,
+   "jct_p50": 4123.012724536,
+   "jct_p99": 12332.278353471,
+   "mechanism": {
+    "admission_holds": 0,
+    "admission_releases": 0,
+    "currently_protected": 0,
+    "protected": 1297150,
+    "reclaimed_expired": 11229,
+    "reclaimed_expired_chunk": 11229,
+    "reclaimed_forced": 461179,
+    "reclaimed_forced_chunk": 461179,
+    "released": 824742,
+    "stamps": 0,
+    "unparked_by_hit": 0,
+    "victim_overrides": 0
+   },
+   "n": 50,
+   "stderr_tail": "INFO:    underlay of /etc/localtime required more than 50 (102) bind mounts\n",
+   "wall_s": 2527.4
+  }
+ }
+}

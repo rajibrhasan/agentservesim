@@ -1,0 +1,1238 @@
+--- a/vllm/envs.py
++++ b/vllm/envs.py
+@@ -219,6 +219,7 @@
+     VLLM_CUSTOM_SCOPES_FOR_PROFILING: bool = False
+     VLLM_NVTX_SCOPES_FOR_PROFILING: bool = False
+     VLLM_KV_EVENTS_USE_INT_BLOCK_HASHES: bool = True
++    VLLM_KV_PROTECTION: bool = False
+     VLLM_OBJECT_STORAGE_SHM_BUFFER_NAME: str = "VLLM_OBJECT_STORAGE_SHM_BUFFER"
+     VLLM_DEEPEP_BUFFER_SIZE_MB: int = 1024
+     VLLM_DEEPEP_HIGH_THROUGHPUT_FORCE_INTRA_NODE: bool = False
+@@ -1526,6 +1527,12 @@
+     # raw bytes. Defaults to True for backward compatibility.
+     "VLLM_KV_EVENTS_USE_INT_BLOCK_HASHES": lambda: bool(
+         int(os.getenv("VLLM_KV_EVENTS_USE_INT_BLOCK_HASHES", "1"))
++    ),
++    # Enable agent-serving KV block protection: completed requests' cached
++    # blocks can be parked (shielded from LRU reclaim) until a deadline.
++    # Advisory under memory pressure; see v1/core/block_pool.py.
++    "VLLM_KV_PROTECTION": lambda: (
++        os.getenv("VLLM_KV_PROTECTION", "False").lower() in ("true", "1")
+     ),
+     # Name of the shared memory buffer used for object storage.
+     # Only effective when mm_config.mm_processor_cache_type == "shm".
+--- a/vllm/outputs.py
++++ b/vllm/outputs.py
+@@ -121,6 +121,7 @@
+         num_cached_tokens: int | None = None,
+         *,
+         kv_transfer_params: dict[str, Any] | None = None,
++        policy_kv_snapshot: dict[str, Any] | None = None,
+         # Forward compatibility, code that uses args added in new release can
+         # still run with older versions of vLLM without breaking.
+         **kwargs: Any,
+@@ -141,12 +142,15 @@
+         self.encoder_prompt_token_ids = encoder_prompt_token_ids
+         self.num_cached_tokens = num_cached_tokens
+         self.kv_transfer_params = kv_transfer_params
++        self.policy_kv_snapshot = policy_kv_snapshot
+ 
+     def add(self, next_output: "RequestOutput", aggregate: bool) -> None:
+         """Merge subsequent RequestOutput into this one"""
+ 
+         self.finished |= next_output.finished
+         self.kv_transfer_params = next_output.kv_transfer_params
++        if next_output.policy_kv_snapshot is not None:
++            self.policy_kv_snapshot = next_output.policy_kv_snapshot
+ 
+         for next_completion in next_output.outputs:
+             for i, completion in enumerate(self.outputs):
+--- a/vllm/v1/core/block_pool.py
++++ b/vllm/v1/core/block_pool.py
+@@ -1,5 +1,6 @@
+ # SPDX-License-Identifier: Apache-2.0
+ # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
++import time
+ from collections.abc import Iterable, Sequence
+ from typing import Any
+ 
+@@ -152,6 +153,7 @@
+         hash_block_size: int,
+         enable_kv_cache_events: bool = False,
+         metrics_collector: KVCacheMetricsCollector | None = None,
++        enable_kv_protection: bool = False,
+     ):
+         assert isinstance(num_gpu_blocks, int) and num_gpu_blocks > 0
+         self.num_gpu_blocks = num_gpu_blocks
+@@ -179,6 +181,26 @@
+         self.kv_event_queue: list[KVCacheEvent] = []
+ 
+         self.metrics_collector = metrics_collector
++
++        # Agent-serving KV block protection (VLLM_KV_PROTECTION).
++        # Parked blocks: cached (hit-able), ref_cnt == 0, removed from the
++        # free_block_queue so ordinary allocation never reclaims them.
++        # Protection is advisory: when the free queue cannot satisfy an
++        # allocation, parked blocks are reclaimed (expired first, then
++        # latest-deadline-first). Deadlines are wall-clock (time.time()).
++        self.enable_kv_protection = enable_kv_protection and enable_caching
++        self._protected: dict[int, float] = {}  # block_id -> expiry_ts
++        self._reclaim_rank: dict[int, int] = {}  # block_id -> published eviction rank
++        self.protection_stats = {
++            "protected": 0,
++            "released": 0,
++            "unparked_by_hit": 0,
++            "reclaimed_expired": 0,
++            "reclaimed_forced": 0,
++            # Pins whose expiry was suspended because the owning program's
++            # next turn is already queued (see KVCacheManager.kv_hold).
++            "held_at_arrival": 0,
++        }
+ 
+     def get_cached_block(
+         self, block_hash: BlockHash, kv_cache_group_ids: list[int]
+@@ -331,7 +353,12 @@
+         if num_blocks > self.get_num_free_blocks():
+             raise ValueError(f"Cannot get {num_blocks} free blocks from the pool")
+ 
+-        ret: list[KVCacheBlock] = self.free_block_queue.popleft_n(num_blocks)
++        num_from_queue = min(num_blocks, self.free_block_queue.num_free_blocks)
++        ret: list[KVCacheBlock] = self.free_block_queue.popleft_n(num_from_queue)
++        if num_from_queue < num_blocks:
++            # Safety valve: the free queue alone cannot satisfy this
++            # allocation; reclaim protected (parked) blocks.
++            ret.extend(self._reclaim_protected(num_blocks - num_from_queue))
+ 
+         # In order to only iterate the list once, we duplicated code a bit
+         if self.enable_caching:
+@@ -399,9 +426,17 @@
+         """
+         for block in blocks:
+             # ref_cnt=0 means this block is in the free list (i.e. eviction
+-            # candidate), so remove it.
++            # candidate) or parked under KV protection; remove accordingly.
+             if block.ref_cnt == 0 and not block.is_null:
+-                self.free_block_queue.remove(block)
++                if (
++                    self.enable_kv_protection
++                    and self._protected.pop(block.block_id, None) is not None
++                ):
++                    # Parked block hit by a new request: unpark. It is not
++                    # in the free queue, so there is nothing to remove.
++                    self.protection_stats["unparked_by_hit"] += 1
++                else:
++                    self.free_block_queue.remove(block)
+             block.ref_cnt += 1
+             if self.metrics_collector:
+                 self.metrics_collector.on_block_accessed(block)
+@@ -439,7 +474,122 @@
+                 f"only report block IDs that were allocated by the scheduler."
+             )
+             block = self.blocks[block_id]
+-            self._maybe_evict_cached_block(block)
++            if (
++                self.enable_kv_protection
++                and self._protected.pop(block_id, None) is not None
++            ):
++                # Parked block explicitly evicted: uncache and return it to
++                # the free queue as a plain free block.
++                self._maybe_evict_cached_block(block)
++                self.free_block_queue.append_n([block])
++            else:
++                self._maybe_evict_cached_block(block)
++
++    def protect_blocks(self, block_ids: list[int], deadline_ts: float) -> int:
++        """Park cached, unreferenced blocks: remove them from the free
++        queue so LRU reclaim skips them until `deadline_ts` (wall clock).
++        Advisory: the safety valve in get_new_blocks() may still reclaim
++        them under pressure. Returns the number of blocks parked.
++        """
++        if not self.enable_kv_protection:
++            return 0
++        parked = 0
++        for block_id in block_ids:
++            if block_id >= len(self.blocks) or block_id in self._protected:
++                continue
++            block = self.blocks[block_id]
++            if block.is_null or block.ref_cnt != 0 or block.block_hash is None:
++                continue
++            self.free_block_queue.remove(block)
++            self._protected[block_id] = deadline_ts
++            parked += 1
++        self.protection_stats["protected"] += parked
++        return parked
++
++    def set_protection_deadline(self, block_ids: list[int], deadline_ts: float) -> int:
++        """Re-stamp the deadline of blocks that are still parked (pinned
++        at free time). Returns the number still parked."""
++        n = 0
++        for block_id in block_ids:
++            if block_id in self._protected:
++                self._protected[block_id] = deadline_ts
++                n += 1
++        return n
++
++    def release_blocks(self, block_ids: list[int]) -> int:
++        """Unpark blocks: return them to the free queue in
++        most-recently-used position. Returns the number released."""
++        if not self.enable_kv_protection:
++            return 0
++        released = []
++        for block_id in block_ids:
++            if self._protected.pop(block_id, None) is not None:
++                self._reclaim_rank.pop(block_id, None)
++                released.append(self.blocks[block_id])
++        if released:
++            self.free_block_queue.append_n(released)
++        self.protection_stats["released"] += len(released)
++        return len(released)
++
++    def _reclaim_protected(self, num_blocks: int) -> list[KVCacheBlock]:
++        """Safety valve: reclaim parked blocks to satisfy an allocation.
++        Expired protections go first (oldest expiry first); if more are
++        needed, unexpired protections are broken latest-deadline-first.
++        Within one protection the sort is stable, so blocks come out in
++        the order they were parked: callers park tail-first (see
++        KVCacheManager.free) so a partial reclaim takes a context's tail
++        and leaves its prefix matchable."""
++        assert num_blocks <= len(self._protected)
++        now = time.time()
++        by_expiry = sorted(self._protected.items(), key=lambda kv: kv[1])
++        expired = [(bid, exp) for bid, exp in by_expiry if exp <= now]
++        unexpired = [(bid, exp) for bid, exp in by_expiry if exp > now]
++        chosen: list[int] = []
++        for bid, _ in expired:
++            if len(chosen) == num_blocks:
++                break
++            chosen.append(bid)
++            self.protection_stats["reclaimed_expired"] += 1
++        # Break unexpired protections in the published eviction order (rank 0
++        # first); blocks without a rank follow, latest-deadline-first.
++        unexpired.sort(
++            key=lambda kv: (self._reclaim_rank.get(kv[0], len(self.blocks)), -kv[1])
++        )
++        for bid, _ in unexpired:
++            if len(chosen) == num_blocks:
++                break
++            chosen.append(bid)
++            self.protection_stats["reclaimed_forced"] += 1
++        ret = []
++        for bid in chosen:
++            del self._protected[bid]
++            self._reclaim_rank.pop(bid, None)
++            ret.append(self.blocks[bid])
++        return ret
++
++    def get_protection_stats(self) -> dict[str, int]:
++        stats = dict(self.protection_stats)
++        stats["currently_protected"] = len(self._protected)
++        # Gateway admission gate inputs: blocks allocatable without the
++        # safety valve breaking a pin (free queue, cached-evictable
++        # included), and the pool size. get_num_free_blocks() counts
++        # parked blocks as free, so it is not usable for that question.
++        stats["free_queue_blocks"] = self.free_block_queue.num_free_blocks
++        stats["num_gpu_blocks"] = self.num_gpu_blocks
++        # Cached (evictable) blocks inside the free queue. The simulator's
++        # utilization counts these as used; vLLM's kv_cache_usage does not.
++        # Walk of the free list (~7k blocks): only called from the gateway
++        # admission path, a few times per second at most.
++        q = self.free_block_queue
++        n = 0
++        blk = q.fake_free_list_head.next_free_block
++        tail = q.fake_free_list_tail
++        while blk is not tail:
++            if blk.block_hash is not None:
++                n += 1
++            blk = blk.next_free_block
++        stats["cached_free_blocks"] = n
++        return stats
+ 
+     def reset_prefix_cache(self) -> bool:
+         """Reset prefix cache. This function may be used in RLHF
+@@ -450,6 +600,8 @@
+             bool: True if the prefix cache is successfully reset,
+             False otherwise.
+         """
++        if self.enable_kv_protection and self._protected:
++            self.release_blocks(list(self._protected.keys()))
+         num_used_blocks = self.num_gpu_blocks - self.get_num_free_blocks()
+         if num_used_blocks != 1:  # The null block is always marked as used
+             logger.warning(
+@@ -480,9 +632,10 @@
+         """Get the number of free blocks in the pool.
+ 
+         Returns:
+-            The number of free blocks.
+-        """
+-        return self.free_block_queue.num_free_blocks
++            The number of free blocks. Parked (protected) blocks count as
++            free: they are reclaimable on demand via the safety valve.
++        """
++        return self.free_block_queue.num_free_blocks + len(self._protected)
+ 
+     def get_usage(self) -> float:
+         """Get the KV cache usage.
+--- a/vllm/v1/core/kv_cache_coordinator.py
++++ b/vllm/v1/core/kv_cache_coordinator.py
+@@ -4,6 +4,7 @@
+ from collections.abc import Sequence
+ from math import lcm
+ 
++import vllm.envs as envs
+ from vllm.v1.core.block_pool import BlockPool
+ from vllm.v1.core.kv_cache_metrics import KVCacheMetricsCollector
+ from vllm.v1.core.kv_cache_utils import (
+@@ -52,6 +53,7 @@
+             hash_block_size,
+             enable_kv_cache_events,
+             metrics_collector,
++            enable_kv_protection=envs.VLLM_KV_PROTECTION,
+         )
+ 
+         # Needs special handling for find_longest_cache_hit if eagle is enabled
+--- a/vllm/v1/core/kv_cache_manager.py
++++ b/vllm/v1/core/kv_cache_manager.py
+@@ -2,15 +2,20 @@
+ # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+ 
+ import itertools
++import os
++import time
++from collections import OrderedDict
+ from collections.abc import Sequence
+ from dataclasses import dataclass
+ from typing import Literal, overload
+ 
++import vllm.envs as envs
+ from vllm.distributed.kv_events import KVCacheEvent
+ from vllm.logger import init_logger
+ from vllm.v1.core.kv_cache_coordinator import get_kv_cache_coordinator
+ from vllm.v1.core.kv_cache_metrics import KVCacheMetricsCollector
+ from vllm.v1.core.kv_cache_utils import KVCacheBlock
++from vllm.v1.core.kv_queue_holds import QueueHolds
+ from vllm.v1.kv_cache_interface import KVCacheConfig
+ from vllm.v1.metrics.stats import PrefixCacheStats
+ from vllm.v1.request import Request
+@@ -142,6 +147,18 @@
+         self.num_kv_cache_groups = len(kv_cache_config.kv_cache_groups)
+         self.block_pool = self.coordinator.block_pool
+         self.kv_cache_config = kv_cache_config
++
++        # Agent-serving KV protection (VLLM_KV_PROTECTION): remember the
++        # block ids of recently freed requests so the serving layer can
++        # protect them after completion, and remember what each request
++        # protected so it can release them later.
++        self.enable_kv_protection = envs.VLLM_KV_PROTECTION and self.enable_caching
++        self._freed_request_blocks: OrderedDict[str, list[int]] = OrderedDict()
++        self._freed_request_blocks_cap = 8192
++        self._protected_requests: dict[str, list[int]] = {}
++        self._kv_queue_holds = QueueHolds()
++        _ttl = os.environ.get("VLLM_KV_PIN_AT_FREE_TTL")
++        self._pin_at_free_ttl = float(_ttl) if _ttl else None
+ 
+         # Pre-constructed KVCacheBlocks with no blocks, callers should use this
+         # via create_kv_cache_blocks instead of creating new ones to avoid GC
+@@ -434,7 +451,45 @@
+         Args:
+             request: The request to free the blocks.
+         """
++        if self.enable_kv_protection:
++            # Tail-first, matching the reversed order the coordinator frees
++            # in: the retention path (park, reclaim, release) must consume
++            # a context from its tail so the prefix stays matchable. A
++            # head-first order lets a reclaim of a few blocks invalidate
++            # the whole context for prefix caching (measured: 3-6x prefill
++            # cost under TTL retention on Llama-3.1-70B, 2026-08-25).
++            block_ids = [
++                block.block_id
++                for group in self.coordinator.get_blocks(request.request_id)
++                for block in reversed(group)
++                if not block.is_null
++            ]
++            if block_ids:
++                self._freed_request_blocks[self._kv_retention_key(request)] = block_ids
++                while len(self._freed_request_blocks) > (
++                    self._freed_request_blocks_cap
++                ):
++                    self._freed_request_blocks.popitem(last=False)
+         self.coordinator.free(request.request_id)
++        # VLLM_KV_PIN_AT_FREE_TTL=<s>: park a finished request's blocks in
++        # the same step they are freed (provisional deadline now+ttl), the
++        # way the simulator applies protect-on-completion atomically. The
++        # gateway's later kv_protect then only sets the policy deadline.
++        # Without it the pin lands one gateway->engine RPC later, and
++        # under a full pool the freed blocks are consumed in between
++        # (measured 2026-09-06: parked/expected median 0.86, p10 0.06).
++        if (
++            self.enable_kv_protection
++            and self._pin_at_free_ttl is not None
++            and block_ids
++            and request.is_finished()
++        ):
++            key = self._kv_retention_key(request)
++            parked = self.block_pool.protect_blocks(
++                block_ids, time.time() + self._pin_at_free_ttl
++            )
++            if parked:
++                self._protected_requests[key] = block_ids
+ 
+     def remove_skipped_blocks(
+         self, request_id: str, total_computed_tokens: int
+@@ -456,6 +511,129 @@
+             block_ids: Set of block IDs to evict from cache.
+         """
+         self.block_pool.evict_blocks(block_ids)
++
++    @staticmethod
++    def _kv_retention_key(request: Request) -> str:
++        """Key under which a completed request's blocks are tracked for
++        protection. The engine rewrites external request ids (see
++        InputProcessor.assign_request_id), so callers cannot address a
++        request by the id they submitted. Instead, callers that intend to
++        protect a request tag it at submission with
++        SamplingParams.extra_args["kv_tag"] (HTTP: vllm_xargs); that tag
++        is the key. Untagged requests fall back to the internal id."""
++        sp = request.sampling_params
++        if sp is not None and sp.extra_args:
++            tag = sp.extra_args.get("kv_tag")
++            if tag is not None:
++                return str(tag)
++        return request.request_id
++
++    def kv_protect(self, request_id: str, deadline_ts: float) -> int:
++        """Protect the cached blocks of a completed request until
++        `deadline_ts` (wall clock, seconds). `request_id` is the caller's
++        kv_tag when one was supplied at submission (see
++        _kv_retention_key). Returns blocks parked."""
++        if not self.enable_kv_protection:
++            return 0
++        block_ids = self._freed_request_blocks.pop(request_id, None)
++        if not block_ids:
++            return 0
++        if request_id in self._protected_requests:
++            # Pinned at free time (VLLM_KV_PIN_AT_FREE_TTL): apply the
++            # policy's deadline to the blocks still parked.
++            return self.block_pool.set_protection_deadline(block_ids, deadline_ts)
++        parked = self.block_pool.protect_blocks(block_ids, deadline_ts)
++        if parked:
++            self._protected_requests[request_id] = block_ids
++        return parked
++
++    def kv_release(self, request_id: str) -> int:
++        """Release a previous protection. Returns blocks unparked (blocks
++        already unparked by cache hits or the safety valve are skipped)."""
++        if not self.enable_kv_protection:
++            return 0
++        self._kv_queue_holds.finish(self, request_id)
++        block_ids = self._protected_requests.pop(request_id, None)
++        if not block_ids:
++            return 0
++        return self.block_pool.release_blocks(block_ids)
++
++    #: Deadline stamped on a pin whose next turn is already queued. Any value
++    #: beyond wall-clock now suppresses the expired-first reclaim pass; this one
++    #: is far enough out that no run reaches it, and it sorts last by deadline
++    #: so the unexpired pass breaks held pins FIRST.
++    KV_HOLD_DEADLINE = 1e18
++
++    def kv_reclaim_order(self, request_ids: list[str]) -> int:
++        """Publish the policy's eviction order for protected requests.
++
++        When the safety valve must break unexpired protections it takes the
++        listed requests first, in this order; unlisted requests keep the
++        latest-deadline-first order. Returns the number of blocks ranked.
++        """
++        ranks = self.block_pool._reclaim_rank
++        ranks.clear()
++        for rank, request_id in enumerate(request_ids):
++            for block_id in self._protected_requests.get(request_id, ()):
++                if block_id in self.block_pool._protected:
++                    ranks[block_id] = rank
++        return len(ranks)
++
++    def kv_hold(self, request_id: str, deadline_ts: float | None = None) -> int:
++        """Suspend a protection's expiry while its next turn waits in the queue.
++
++        Released Continuum unpins only when the TTL has expired AND the job is
++        not in the waiting queue (vllm-continuum scheduler.py ~248-256), so an
++        arrival suppresses expiry and the pin survives the whole queue wait.
++        Without this the pin expires mid-wait and the policy degenerates toward
++        LRU exactly where it is supposed to hold -- the simulator mirrors the
++        released semantics (UnifiedPolicyAdapter._HOLD_SENTINEL_NS) and this
++        port did not, so the two were running different policies.
++
++        Held pins stay breakable: the valve's expired pass skips them, and its
++        unexpired pass breaks latest-deadline-first, which puts a held pin at
++        the front. That is the released code's behaviour too -- it breaks pins
++        only under pressure, latest end_time first.
++
++        Returns the number of blocks still parked (0 if the pin is already gone,
++        reclaimed by the valve or consumed by a cache hit).
++        """
++        if not self.enable_kv_protection:
++            return 0
++        block_ids = self._protected_requests.get(request_id)
++        if not block_ids:
++            return 0
++        if deadline_ts is None:
++            self._kv_queue_holds.capture(self, request_id)
++        n = self.block_pool.set_protection_deadline(
++            block_ids, self.KV_HOLD_DEADLINE if deadline_ts is None else deadline_ts
++        )
++        if n:
++            self.block_pool.protection_stats["held_at_arrival"] += n
++        return n
++
++    def kv_evict(self, request_id: str) -> int:
++        """Evict a completed request's cached blocks now (the evict arm of
++        a retention decision). Returns the number of blocks targeted."""
++        if not self.enable_kv_protection:
++            return 0
++        freed = self._freed_request_blocks.pop(request_id, None)
++        pinned = self._protected_requests.pop(request_id, None)
++        block_ids = freed or pinned
++        if not block_ids:
++            return 0
++        self.block_pool.evict_blocks(set(block_ids))
++        return len(block_ids)
++
++    def kv_hold_cancel(self, request_id: str) -> None:
++        """Drop a queue hold whose waiting successor was never scheduled."""
++        self._kv_queue_holds.finish(self, request_id, cancelled=True)
++
++    def kv_protection_stats(self) -> dict[str, int]:
++        stats = self.block_pool.get_protection_stats()
++        stats["freed_requests_tracked"] = len(self._freed_request_blocks)
++        stats["protected_requests"] = len(self._protected_requests)
++        return stats
+ 
+     def reset_prefix_cache(self) -> bool:
+         """Reset prefix cache. This function may be used in RLHF
+--- /dev/null
++++ b/vllm/v1/core/kv_queue_holds.py
+@@ -0,0 +1,68 @@
++# SPDX-License-Identifier: Apache-2.0
++# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
++"""Lifetime of Continuum's temporary waiting-queue protection.
++
++An arriving successor suspends expiry until scheduling. If it is cancelled
++before scheduling, the old pin resumes its original deadline, rather than
++remaining held forever or losing the rest of its valid TTL. This records no
++new physical references and cannot resurrect a reclaimed block.
++
++Installed into vllm/v1/core/ by experiments/validation/prepare_policy_engine.py;
++the copy under experiments/validation/engine_files/ is the source of truth.
++"""
++
++from dataclasses import dataclass, field
++
++
++@dataclass
++class HeldBlock:
++    block_hash: object
++    deadline: float
++    tags: set = field(default_factory=set)
++
++
++class QueueHolds:
++    def __init__(self):
++        self.counts = {}
++        self.blocks = {}
++        self.by_tag = {}
++
++    def capture(self, manager, tag):
++        self.counts[tag] = self.counts.get(tag, 0) + 1
++        pool = manager.block_pool
++        ids = self.by_tag.setdefault(tag, set())
++        for bid in manager._protected_requests.get(tag, ()):
++            deadline = pool._protected.get(bid)
++            if deadline is None:
++                continue
++            block_hash = pool.blocks[bid].block_hash
++            previous = self.blocks.get(bid)
++            if previous is None or previous.block_hash != block_hash:
++                previous = HeldBlock(block_hash, deadline)
++                self.blocks[bid] = previous
++            previous.tags.add(tag)
++            ids.add(bid)
++
++    def finish(self, manager, tag, cancelled=False):
++        count = self.counts.get(tag, 0)
++        if not count:
++            return
++        if cancelled and count > 1:
++            self.counts[tag] = count - 1
++            return
++        self.counts.pop(tag)
++        pool = manager.block_pool
++        for bid in self.by_tag.pop(tag, ()):
++            record = self.blocks.get(bid)
++            if record is None:
++                continue
++            record.tags.discard(tag)
++            if record.tags:
++                continue
++            del self.blocks[bid]
++            if (
++                cancelled
++                and pool.blocks[bid].block_hash == record.block_hash
++                and pool._protected.get(bid) == manager.KV_HOLD_DEADLINE
++            ):
++                pool.set_protection_deadline([bid], record.deadline)
+--- /dev/null
++++ b/vllm/v1/core/sched/admission_gate.py
+@@ -0,0 +1,185 @@
++# SPDX-License-Identifier: Apache-2.0
++"""Scheduler-side admission gate for agent programs (AgentServeSim port).
++
++Mirrors LLMServingSim's ``UnifiedPolicyAdapter.filter_waiting``: at each
++scheduling step every WAITING (not preempted) request is shown a QueueView
++of the KV pool and the harness scheduling policy's ``admit()`` decides
++whether the request may be scheduled this step. A held request keeps its
++queue place (it is re-queued through the skipped-waiting path) and is
++re-asked next step. When nothing is running, nothing has been scheduled
++this step, and no waiting request passes the gate, the queue head is
++admitted regardless (the simulator's starvation guard, same rule: it fires
++only when the whole queue would otherwise be held).
++
++Enabled by ``VLLM_ADMISSION_GATE=<harness root>``: the directory holding
++``harness/`` with an ``evolved_scheduling.py`` drop-in (same scratch copy
++the gateway uses). Optional:
++  ``VLLM_ADMISSION_LOG``   jsonl path for per-hold records
++  ``GATE_UTIL_SEMANTICS``  ``sim`` (default: cached-evictable blocks count
++                           as used, LLMServingSim's npu_used) or ``vllm``
++                           (kv_cache_usage: evictable blocks are free)
++"""
++
++from __future__ import annotations
++
++import json
++import os
++import sys
++import time
++from types import SimpleNamespace
++from typing import TYPE_CHECKING
++
++from vllm.logger import init_logger
++
++if TYPE_CHECKING:
++    from vllm.v1.core.kv_cache_manager import KVCacheManager
++    from vllm.v1.request import Request
++
++logger = init_logger(__name__)
++
++
++def build_admission_gate(kv_cache_manager: "KVCacheManager",
++                         block_size: int) -> "AdmissionGate | None":
++    root = os.environ.get("VLLM_ADMISSION_GATE")
++    if not root:
++        return None
++    if root not in sys.path:
++        sys.path.insert(0, root)
++    from harness.scheduling import QueueView  # noqa: F401
++    from harness.evolved_scheduling import EvolvedScheduling
++    policy = EvolvedScheduling()
++    gate = AdmissionGate(policy, kv_cache_manager, block_size,
++                         util_semantics=os.environ.get("GATE_UTIL_SEMANTICS", "sim"),
++                         cached_mode=os.environ.get("GATE_CACHED_TOKENS", "live"),
++                         log_path=os.environ.get("VLLM_ADMISSION_LOG"))
++    logger.info("Admission gate enabled: %s.%s from %s (util=%s, cached=%s)",
++                type(policy).__module__, type(policy).__name__, root,
++                gate.util_semantics, gate.cached_mode)
++    return gate
++
++
++class AdmissionGate:
++
++    def __init__(self, policy, kv_cache_manager, block_size, util_semantics="sim",
++                 cached_mode="live", log_path=None):
++        from harness.scheduling import QueueView
++        self._QueueView = QueueView
++        self.policy = policy
++        self.kvm = kv_cache_manager
++        self.block_size = int(block_size)
++        self.util_semantics = util_semantics
++        # GATE_CACHED_TOKENS: "live" = real prefix hit (the policy as
++        # written); "zero" = the degenerate variant the simulator scored
++        # before 2026-09-06 (its gate saw cached_tokens=0 for held turns).
++        self.cached_mode = cached_mode
++        self.stats = {"admission_holds": 0, "admission_admits": 0,
++                      "admission_guard_admits": 0}
++        self._log = open(log_path, "a", buffering=1) if log_path else None  # line-buffered
++        self._snap = None
++        self._first_in_step = False
++
++    # -- per-step snapshot of the pool. The sim evaluates every waiting turn
++    #    of a tick against one memory view (filter_waiting reads free /
++    #    evictable / utilization once); the same here: free-queue size and
++    #    the cached-in-free-queue count are taken at step start, so a turn
++    #    admitted earlier in the same step does not shrink what later turns
++    #    see. The prefix hit stays per request (the sim probes per request).
++    def begin_step(self) -> None:
++        st = dict(self.kvm.block_pool.get_protection_stats())
++        st["free_q"] = int(self.kvm.block_pool.free_block_queue.num_free_blocks)
++        self._snap = st
++        self._first_in_step = True
++
++    def _view(self, request: "Request", n_running: int, n_waiting: int):
++        pool = self.kvm.block_pool
++        st = self._snap
++        if st is None:
++            st = dict(pool.get_protection_stats())
++            st["free_q"] = int(pool.free_block_queue.num_free_blocks)
++        total = int(st.get("num_gpu_blocks", 0)) - 1  # null block
++        free_q = int(st["free_q"])
++        cached_free = min(int(st.get("cached_free_blocks", 0)), free_q)
++        free_uncached = free_q - cached_free
++        util = None
++        if total > 0:
++            used = total - free_q if self.util_semantics == "vllm" else total - free_uncached
++            util = max(0.0, min(1.0, used / total))
++        if self.cached_mode == "zero":
++            cached_tokens = 0
++        else:
++            _, cached_tokens = self.kvm.get_computed_blocks(request)
++        return self._QueueView(
++            n_running=n_running, n_waiting=n_waiting, n_inflight=n_running,
++            kv_utilization=util,
++            kv_free_tokens=free_uncached * self.block_size,
++            kv_evictable_tokens=cached_free * self.block_size,
++            prompt_tokens=int(request.num_prompt_tokens),
++            cached_tokens=int(cached_tokens))
++
++    def _pcb(self, request: "Request"):
++        tag = self.kvm._kv_retention_key(request)
++        return SimpleNamespace(
++            program_id=tag, arrival_ts=float(request.arrival_time),
++            context_tokens=int(request.num_prompt_tokens),
++            kv_protected=tag in self.kvm._protected_requests, turn_idx=None)
++
++    def select_victim(self, candidates):
++        """Apply the Gate victim rule to native running requests."""
++        if not candidates:
++            return None
++        views = [SimpleNamespace(
++            pcb=self._pcb(r), priority=r.priority,
++            prompt_tokens=r.num_prompt_tokens,
++            generated_tokens=max(0, r.num_computed_tokens - r.num_prompt_tokens),
++            computed_tokens=r.num_computed_tokens,
++            is_prefill=r.num_computed_tokens < r.num_prompt_tokens)
++            for r in candidates]
++        index = self.policy.victim(views, time.time())
++        if index is None:
++            return None
++        if not isinstance(index, int) or not 0 <= index < len(candidates):
++            raise ValueError("Admission policy returned an invalid victim index")
++        self.stats["victim_overrides"] = self.stats.get("victim_overrides", 0) + 1
++        return candidates[index]
++
++    def _passes(self, request, n_running, n_waiting, now) -> bool:
++        if request.num_computed_tokens > 0:
++            return True
++        return bool(self.policy.admit(self._pcb(request), now,
++                                      self._view(request, n_running, n_waiting)))
++
++    def admit(self, request: "Request", n_running: int, n_waiting: int,
++              idle: bool, others=()) -> bool:
++        """True = let the scheduler try to fit `request` this step.
++        `others`: the remaining waiting requests (for the idle guard)."""
++        if request.num_computed_tokens > 0:
++            return True  # resumed after preemption / async KV: never gated
++        head = self._first_in_step
++        self._first_in_step = False
++        view = self._view(request, n_running, n_waiting)
++        pcb = self._pcb(request)
++        now = time.time()
++        ok = bool(self.policy.admit(pcb, now, view))
++        if not ok and idle and head:
++            # Starvation guard (sim: `if not kept and not running and
++            # n_inflight == 0: kept = [waiting[0]]`): admit the queue head
++            # only when no other waiting request would pass this step.
++            if not any(self._passes(r, n_running, n_waiting, now)
++                       for r in others if r is not request):
++                self.stats["admission_guard_admits"] += 1
++                return True
++        if ok:
++            self.stats["admission_admits"] += 1
++        else:
++            self.stats["admission_holds"] += 1
++            if self._log is not None:
++                self._log.write(json.dumps({
++                    "event": "hold", "ts": now, "program_id": pcb.program_id,
++                    "request_id": request.request_id,
++                    "kv_utilization": view.kv_utilization,
++                    "kv_free_tokens": view.kv_free_tokens,
++                    "kv_evictable_tokens": view.kv_evictable_tokens,
++                    "prompt_tokens": view.prompt_tokens,
++                    "cached_tokens": view.cached_tokens,
++                    "n_running": n_running, "n_waiting": n_waiting}) + "\n")
++        return ok
+--- a/vllm/v1/core/sched/scheduler.py
++++ b/vllm/v1/core/sched/scheduler.py
+@@ -1,6 +1,7 @@
+ # SPDX-License-Identifier: Apache-2.0
+ # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+ import itertools
++import os
+ import time
+ from collections import defaultdict, deque
+ from collections.abc import Iterable
+@@ -100,6 +101,8 @@
+             defaultdict(set) if include_finished_set else None
+         )
+         self.prev_step_scheduled_req_ids: set[str] = set()
++        self._policy_resident_requeues: set[str] = set()
++        self._policy_resident_block_counts: dict[str, tuple[int, ...]] = {}
+ 
+         # Scheduling constraints.
+         self.max_num_running_reqs = self.scheduler_config.max_num_seqs
+@@ -234,6 +237,24 @@
+             hash_block_size=self.block_size,
+             metrics_collector=self.kv_metrics_collector,
+         )
++        # Agent-serving admission gate (VLLM_ADMISSION_GATE): the harness
++        # scheduling policy's admit() runs inside the waiting loop, as in
++        # the simulator's filter_waiting. None when the env var is unset.
++        from vllm.v1.core.sched.admission_gate import build_admission_gate
++
++        self._admission = build_admission_gate(self.kv_cache_manager, self.block_size)
++        # VLLM_KV_RELEASE_AT_ARRIVAL=1: release a program's parked KV in
++        # add_request, i.e. in the same event the next turn enters the
++        # waiting queue (the simulator's on_turn_routed order). Otherwise
++        # the gateway releases by RPC before it submits the turn, and the
++        # released cached-free blocks are consumed before the scheduler
++        # sees the request (measured 2026-09-06: held turns arrive with
++        # only the 48-token shared header cached).
++        self._kv_release_at_arrival = bool(os.environ.get("VLLM_KV_RELEASE_AT_ARRIVAL"))
++        self._arrival_releases = 0
++        self._arrival_release_blocks = 0
++        self._schedule_releases = 0
++        self._schedule_release_blocks = 0
+         # Bind GPU block pool to the KV connector. This must happen after
+         # kv_cache_manager is constructed so block_pool is available.
+         if self.connector is not None and hasattr(
+@@ -406,6 +427,13 @@
+                 + request.num_output_placeholders
+                 - request.num_computed_tokens
+             )
++            if request.infercept_compute_limit is not None:
++                num_new_tokens = min(
++                    num_new_tokens,
++                    max(
++                        0, request.infercept_compute_limit - request.num_computed_tokens
++                    ),
++                )
+             if 0 < self.scheduler_config.long_prefill_token_threshold < num_new_tokens:
+                 num_new_tokens = self.scheduler_config.long_prefill_token_threshold
+             num_new_tokens = min(num_new_tokens, token_budget)
+@@ -473,10 +501,15 @@
+                     # The request cannot be scheduled.
+                     # Preempt the lowest-priority request.
+                     if self.policy == SchedulingPolicy.PRIORITY:
+-                        preempted_req = max(
+-                            self.running,
+-                            key=lambda r: (r.priority, r.arrival_time),
++                        preempted_req = (
++                            self._admission.select_victim(self.running)
++                            if self._admission is not None else None
+                         )
++                        if preempted_req is None:
++                            preempted_req = max(
++                                self.running,
++                                key=lambda r: (r.priority, r.arrival_time),
++                            )
+                         self.running.remove(preempted_req)
+                         if preempted_req in scheduled_running_reqs:
+                             preempted_req_id = preempted_req.request_id
+@@ -563,6 +596,8 @@
+         # Next, schedule the WAITING requests.
+         if not preempted_reqs and self._pause_state == PauseState.UNPAUSED:
+             step_skipped_waiting = create_request_queue(self.policy)
++            if self._admission is not None and (self.waiting or self.skipped_waiting):
++                self._admission.begin_step()
+ 
+             while (self.waiting or self.skipped_waiting) and token_budget > 0:
+                 if len(self.running) == self.max_num_running_reqs:
+@@ -602,6 +637,23 @@
+                     step_skipped_waiting.prepend_request(request)
+                     continue
+ 
++                # Admission gate: hold this WAITING request for one step
++                # (it keeps its queue place via skipped_waiting).
++                if self._admission is not None and not self._admission.admit(
++                    request,
++                    n_running=len(self.running),
++                    n_waiting=len(self.waiting)
++                    + len(self.skipped_waiting)
++                    + len(step_skipped_waiting),
++                    idle=not self.running
++                    and not scheduled_new_reqs
++                    and not scheduled_resumed_reqs,
++                    others=(*self.waiting, *self.skipped_waiting),
++                ):
++                    request_queue.pop_request()
++                    step_skipped_waiting.prepend_request(request)
++                    continue
++
+                 num_external_computed_tokens = 0
+                 load_kv_async = False
+                 connector_prefix_cache_queries, connector_prefix_cache_hits = 0, 0
+@@ -663,6 +715,17 @@
+                     # `request.num_prompt_tokens` to consider the resumed
+                     # requests, which have output tokens.
+                     num_new_tokens = request.num_tokens - num_computed_tokens
++                    if request.infercept_compute_limit is not None:
++                        num_new_tokens = min(
++                            num_new_tokens,
++                            max(
++                                0, request.infercept_compute_limit - num_computed_tokens
++                            ),
++                        )
++                        if num_new_tokens == 0:
++                            request_queue.pop_request()
++                            step_skipped_waiting.prepend_request(request)
++                            continue
+                     threshold = self.scheduler_config.long_prefill_token_threshold
+                     if 0 < threshold < num_new_tokens:
+                         num_new_tokens = threshold
+@@ -806,12 +869,20 @@
+                     continue
+ 
+                 self.running.append(request)
+-                if self.log_stats:
++                if self.log_stats and request_id not in self._policy_resident_requeues:
+                     request.record_event(
+                         EngineCoreEventType.SCHEDULED, scheduled_timestamp
+                     )
+                 if request.status == RequestStatus.WAITING:
+                     scheduled_new_reqs.append(request)
++                    tag = request.kv_release_tag_deferred
++                    # Prefix lookup already unparked the blocks it reuses.
++                    if tag:
++                        request.kv_release_tag_deferred = None
++                        self._schedule_releases += 1
++                        self._schedule_release_blocks += (
++                            self.kv_cache_manager.kv_release(tag)
++                        )
+                 elif request.status == RequestStatus.PREEMPTED:
+                     scheduled_resumed_reqs.append(request)
+                 else:
+@@ -1089,14 +1160,16 @@
+                 ]
+                 new_token_ids.append(token_ids)
+             scheduled_in_prev_step = req_id in self.prev_step_scheduled_req_ids
+-            if idx >= num_running_reqs:
++            if idx >= num_running_reqs and req_id not in self._policy_resident_requeues:
+                 assert not scheduled_in_prev_step
+                 resumed_req_ids.add(req_id)
+             if not scheduled_in_prev_step:
+                 all_token_ids[req_id] = req.all_token_ids.copy()
+-            new_block_ids.append(
+-                req_to_new_blocks[req_id].get_block_ids(allow_none=True)
+-            )
++            block_ids = req_to_new_blocks[req_id].get_block_ids(allow_none=True)
++            if req_id in self._policy_resident_requeues and block_ids is not None:
++                counts = self._policy_resident_block_counts[req_id]
++                block_ids = tuple(ids[n:] for ids, n in zip(block_ids, counts))
++            new_block_ids.append(block_ids)
+             num_computed_tokens.append(req.num_computed_tokens)
+             num_output_tokens.append(
+                 req.num_output_tokens + req.num_output_placeholders
+@@ -1471,6 +1544,10 @@
+                         num_external_computed_tokens=request.num_external_computed_tokens,
+                         routed_experts=routed_experts,
+                         num_nans_in_logits=request.num_nans_in_logits,
++                        policy_kv_snapshot=(self._completion_kv_snapshot()
++                            if finish_reason is not None and
++                            self.vllm_config.additional_config.get("policy_completion_snapshot", False)
++                            else None),
+                     )
+                 )
+             else:
+@@ -1747,6 +1824,29 @@
+         else:
+             if request.resumable:
+                 request.streaming_queue = deque()
++            if self._kv_release_at_arrival:
++                sp = request.sampling_params
++                rel = (
++                    sp.extra_args.get("kv_release_tag")
++                    if (sp is not None and sp.extra_args)
++                    else None
++                )
++                if rel is not None:
++                    assert sp is not None and sp.extra_args is not None
++                    if sp.extra_args.get("kv_release_event", "arrival") == "scheduled":
++                        # queue-persistent pin (Continuum's released code): release
++                        # when this turn is first scheduled, see schedule().
++                        request.kv_release_tag_deferred = str(rel)
++                        # ...and suspend its expiry for the queue wait. The
++                        # released code's unpin requires the job NOT be waiting,
++                        # so this arrival protects the pin until it is scheduled.
++                        # Without it the pin expired mid-wait and the valve
++                        # reclaimed it, which is not the policy being claimed.
++                        self.kv_cache_manager.kv_hold(str(rel))
++                    else:
++                        n = self.kv_cache_manager.kv_release(str(rel))
++                        self._arrival_releases += 1
++                        self._arrival_release_blocks += n
+             self._enqueue_waiting_request(request)
+             self.requests[request.request_id] = request
+             if self.log_stats:
+@@ -1820,6 +1920,9 @@
+     ) -> dict[str, Any] | None:
+         assert request.is_finished()
+ 
++        if request.kv_release_tag_deferred is not None:
++            self.kv_cache_manager.kv_hold_cancel(request.kv_release_tag_deferred)
++            request.kv_release_tag_deferred = None
+         connector_delay_free_blocks, kv_xfer_params = self._connector_finished(request)
+         self.encoder_cache_manager.free(request)
+         request_id = request.request_id
+@@ -1859,6 +1962,38 @@
+ 
+     def has_finished_requests(self) -> bool:
+         return len(self.finished_req_ids) > 0
++
++    def kv_protect(self, request_id: str, deadline_ts: float) -> int:
++        return self.kv_cache_manager.kv_protect(request_id, deadline_ts)
++
++    def kv_release(self, request_id: str) -> int:
++        return self.kv_cache_manager.kv_release(request_id)
++
++    def kv_evict(self, request_id: str) -> int:
++        return self.kv_cache_manager.kv_evict(request_id)
++
++    def kv_reclaim_order(self, request_ids: list[str]) -> int:
++        return self.kv_cache_manager.kv_reclaim_order(request_ids)
++
++    def _completion_kv_snapshot(self):
++        # Capture after this request's free/provisional-protection transition.
++        # Read counters only: do not expire pins or mutate the allocator.
++        pool = self.kv_cache_manager.block_pool
++        return dict(schema_version=1, event="completion_after_free",
++                    monotonic_ns=time.monotonic_ns(),
++                    free_queue_blocks=pool.free_block_queue.num_free_blocks,
++                    num_gpu_blocks=pool.num_gpu_blocks,
++                    protected_blocks=len(pool._protected))
++
++    def kv_protection_stats(self) -> dict[str, int]:
++        stats = self.kv_cache_manager.kv_protection_stats()
++        if self._admission is not None:
++            stats.update(self._admission.stats)
++        stats["arrival_releases"] = self._arrival_releases
++        stats["arrival_release_blocks"] = self._arrival_release_blocks
++        stats["schedule_releases"] = self._schedule_releases
++        stats["schedule_release_blocks"] = self._schedule_release_blocks
++        return stats
+ 
+     def reset_prefix_cache(
+         self, reset_running_requests: bool = False, reset_connector: bool = False
+--- a/vllm/v1/engine/__init__.py
++++ b/vllm/v1/engine/__init__.py
+@@ -165,6 +165,7 @@
+     # The number of NaNs in logits.
+     # A value greater than 0 indicates that the output is corrupted.
+     num_nans_in_logits: int = 0
++    policy_kv_snapshot: dict[str, Any] | None = None
+ 
+     @property
+     def finished(self) -> bool:
+--- a/vllm/v1/engine/core.py
++++ b/vllm/v1/engine/core.py
+@@ -35,6 +35,7 @@
+     maybe_attach_gc_debug_callback,
+ )
+ from vllm.utils.hashing import get_hash_fn_by_name
++from vllm.utils.import_utils import resolve_obj_by_qualname
+ from vllm.utils.network_utils import make_zmq_socket
+ from vllm.utils.system_utils import decorate_logs, set_process_title
+ from vllm.v1.core.kv_cache_utils import (
+@@ -211,6 +212,10 @@
+             self.step if self.batch_queue is None else self.step_with_batch_queue
+         )
+         self.async_scheduling = vllm_config.scheduler_config.async_scheduling
++        self._agent_policy = None
++        if policy_config := vllm_config.additional_config.get("agent_policy"):
++            engine_cls = resolve_obj_by_qualname(policy_config["engine_cls"])
++            self._agent_policy = engine_cls(self, policy_config)
+ 
+         self.aborts_queue = queue.Queue[list[str]]()
+ 
+@@ -329,7 +334,11 @@
+         # TODO: The scheduler doesn't really need to know the
+         # specific finish reason, TBD whether we propagate that
+         # (i.e. client-aborted vs stop criteria met).
++        if self._agent_policy is not None:
++            self._agent_policy.before_abort(request_ids)
+         self.scheduler.finish_requests(request_ids, RequestStatus.FINISHED_ABORTED)
++        if self._agent_policy is not None:
++            self._agent_policy.abort_completed()
+ 
+     @contextmanager
+     def log_error_detail(self, scheduler_output: SchedulerOutput):
+@@ -388,16 +397,32 @@
+         # or finished and not yet removed from the batch.
+         if not self.scheduler.has_requests():
+             return {}, False
+-        scheduler_output = self.scheduler.schedule()
++        scheduler_output = (
++            self._agent_policy.schedule()
++            if self._agent_policy
++            else self.scheduler.schedule()
++        )
+         future = self.model_executor.execute_model(scheduler_output, non_block=True)
+         grammar_output = self.scheduler.get_grammar_bitmask(scheduler_output)
+         with (
+             self.log_error_detail(scheduler_output),
+             self.log_iteration_details(scheduler_output),
+         ):
+-            model_output = future.result()
+-            if model_output is None:
+-                model_output = self.model_executor.sample_tokens(grammar_output)
++            if os.environ.get("VLLM_SERVICE_RETENTION_DURING_EXECUTION") == "1":
++                from bench.core.engine_control_wait import EngineControlWait
++                if not hasattr(self, "_policy_control_wait"):
++                    self._policy_control_wait = EngineControlWait()
++                model_output = self._policy_control_wait.result(
++                    future, self, EngineCoreRequestType.UTILITY)
++                if model_output is None:
++                    sample_future = self.model_executor.sample_tokens(
++                        grammar_output, non_block=True)
++                    model_output = self._policy_control_wait.result(
++                        sample_future, self, EngineCoreRequestType.UTILITY)
++            else:
++                model_output = future.result()
++                if model_output is None:
++                    model_output = self.model_executor.sample_tokens(grammar_output)
+ 
+         # Before processing the model output, process any aborts that happened
+         # during the model execution.
+@@ -406,6 +431,8 @@
+             scheduler_output, model_output
+         )
+ 
++        if self._agent_policy is not None:
++            self._agent_policy.complete()
+         return engine_core_outputs, scheduler_output.total_num_scheduled_tokens > 0
+ 
+     def post_step(self, model_executed: bool) -> None:
+@@ -570,6 +597,37 @@
+             self.mm_receiver_cache.clear_cache()
+ 
+         self.model_executor.reset_mm_cache()
++
++    def policy_migration(self, operation, arguments):
++        if self._agent_policy is None:
++            raise RuntimeError("policy engine is not enabled")
++        return self._agent_policy.migration(operation, *arguments)
++
++    def policy_metrics(self, tag=None):
++        if self._agent_policy is not None:
++            return self._agent_policy.snapshot(tag)
++        metrics = getattr(self.scheduler, "policy_metrics", None)
++        if metrics is None or tag is not None:
++            raise RuntimeError("policy engine is not enabled")
++        return metrics()
++
++    def kv_protect(self, request_id: str, deadline_ts: float) -> int:
++        """Agent-serving KV protection: park a completed request's cached
++        blocks until deadline_ts (wall clock). Requires VLLM_KV_PROTECTION."""
++        return self.scheduler.kv_protect(request_id, deadline_ts)
++
++    def kv_release(self, request_id: str) -> int:
++        return self.scheduler.kv_release(request_id)
++
++    def kv_reclaim_order(self, request_ids: list[str]) -> int:
++        """SAGA WA-LRU: the order in which the safety valve breaks pins."""
++        return self.scheduler.kv_reclaim_order(request_ids)
++
++    def kv_evict(self, request_id: str) -> int:
++        return self.scheduler.kv_evict(request_id)
++
++    def kv_protection_stats(self) -> dict[str, int]:
++        return self.scheduler.kv_protection_stats()
+ 
+     def reset_prefix_cache(
+         self, reset_running_requests: bool = False, reset_connector: bool = False
+--- a/vllm/v1/engine/output_processor.py
++++ b/vllm/v1/engine/output_processor.py
+@@ -172,6 +172,7 @@
+         self.is_prefilling = True
+         self.queue = queue
+         self.num_cached_tokens = 0
++        self.policy_kv_snapshot = None
+ 
+         self.stats = RequestStateStats(arrival_time=arrival_time) if log_stats else None
+ 
+@@ -369,6 +370,7 @@
+             outputs=cast(list[CompletionOutput], outputs),
+             finished=finished,
+             kv_transfer_params=kv_transfer_params,
++            policy_kv_snapshot=self.policy_kv_snapshot,
+             num_cached_tokens=self.num_cached_tokens,
+             metrics=self.stats,
+         )
+@@ -618,6 +620,7 @@
+             kv_transfer_params = engine_core_output.kv_transfer_params
+             routed_experts = engine_core_output.routed_experts
+             req_state.num_cached_tokens = engine_core_output.num_cached_tokens
++            req_state.policy_kv_snapshot = engine_core_output.policy_kv_snapshot
+             req_state.is_prefilling = False
+ 
+             if pooling_output is None:
+--- a/vllm/v1/request.py
++++ b/vllm/v1/request.py
+@@ -75,6 +75,8 @@
+         reasoning_ended: bool | None = None,
+     ) -> None:
+         self.request_id = request_id
++        self.kv_release_tag_deferred: str | None = None
++        self.infercept_compute_limit: int | None = None
+         self.client_index = client_index
+         self.priority = priority
+         self.sampling_params = sampling_params
+--- a/vllm/v1/worker/gpu_worker.py
++++ b/vllm/v1/worker/gpu_worker.py
+@@ -129,6 +129,7 @@
+ 
+         # Buffers saved before sleep
+         self._sleep_saved_buffers: dict[str, torch.Tensor] = {}
++        self._policy_model_events: list = []
+ 
+         # Weight transfer engine (initialized on-demand)
+         self.weight_transfer_engine = (
+@@ -737,10 +738,31 @@
+     def sample_tokens(
+         self, grammar_output: "GrammarOutput | None"
+     ) -> ModelRunnerOutput | AsyncModelRunnerOutput:
+-        return self.model_runner.sample_tokens(grammar_output)
++        return self._policy_timed(self.model_runner.sample_tokens, grammar_output)
+ 
+     @torch.inference_mode()
+-    def execute_model(
++    def execute_model(self, scheduler_output):
++        return self._policy_timed(self._policy_execute_model, scheduler_output)
++
++    def _policy_timed(self, call, *args):
++        """Time a model call with CUDA events when an agent policy is configured.
++
++        The policy worker extension consumes the events. Nothing is recorded
++        without an additional_config["agent_policy"] entry.
++        """
++        policy = self.vllm_config.additional_config.get("agent_policy")
++        if not policy or not policy.get("time_model_calls", True):
++            return call(*args)
++        start = torch.cuda.Event(enable_timing=True)
++        end = torch.cuda.Event(enable_timing=True)
++        start.record()
++        result = call(*args)
++        end.record()
++        self._policy_model_events.append((start, end))
++        return result
++
++    @torch.inference_mode()
++    def _policy_execute_model(
+         self, scheduler_output: "SchedulerOutput"
+     ) -> ModelRunnerOutput | AsyncModelRunnerOutput | None:
+         # ensure any previous non-blocking PP sends are complete

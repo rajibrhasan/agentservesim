@@ -1,0 +1,39 @@
+{
+ "lru-plas": {
+  "lb20_j0.1": {
+   "attempts": 1,
+   "cell": "lb20_j0.1",
+   "decisions": {
+    "evict": 0,
+    "none": 913,
+    "protect": 0,
+    "release": 0
+   },
+   "error": null,
+   "flags": [
+    "--retention",
+    "cache-lru",
+    "--scheduling",
+    "plas"
+   ],
+   "jct_mean": 4413.89455813355,
+   "jct_p50": 4565.480677762,
+   "jct_p99": 5427.108950479,
+   "mechanism": {
+    "admission_holds": 0,
+    "admission_releases": 0,
+    "currently_protected": 0,
+    "protected": 0,
+    "reclaimed_expired": 0,
+    "reclaimed_forced": 0,
+    "released": 0,
+    "stamps": 913,
+    "unparked_by_hit": 0,
+    "victim_overrides": 0
+   },
+   "n": 20,
+   "stderr_tail": "INFO:    underlay of /etc/localtime required more than 50 (102) bind mounts\n",
+   "wall_s": 2152.6
+  }
+ }
+}

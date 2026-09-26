@@ -1,0 +1,27 @@
+{
+ "registered_at": "2026-09-08T18:01:55",
+ "cell": "b200tp1_swe50_j0.04",
+ "description": "HELD-OUT arrival rate: B200 TP1, SWE-bench 50 at 0.04/s (board uses 0.02/s). Same workload and hardware; only the rate is new. Simulator values recorded BEFORE any real vLLM leg was read. Real legs: slurm 41429547-52.",
+ "simulated_mean_jct_s": {
+  "gate": 1213.2,
+  "cache-lru": 1940.9,
+  "min-waste": 2389.5,
+  "saga-fcfs": 1932.4,
+  "lru-plas": 1843.0
+ },
+ "predicted_ranking_best_to_worst": [
+  "Evolved",
+  "Autellix",
+  "SAGA",
+  "stock vLLM",
+  "InferCept"
+ ],
+ "predicted_vs_stock_pct": {
+  "Evolved": -37.5,
+  "stock vLLM": 0.0,
+  "InferCept": 23.1,
+  "SAGA": -0.4,
+  "Autellix": -5.0
+ },
+ "note": "continuum still running at registration time"
+}

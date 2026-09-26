@@ -1,0 +1,39 @@
+{
+ "continuum": {
+  "rtx70b_swe50_j0.1": {
+   "attempts": 1,
+   "cell": "rtx70b_swe50_j0.1",
+   "decisions": {
+    "evict": 0,
+    "none": 211,
+    "protect": 2662,
+    "release": 2619
+   },
+   "error": null,
+   "flags": [
+    "--retention",
+    "continuum",
+    "--scheduling",
+    "continuum"
+   ],
+   "jct_mean": 2790.6182825637998,
+   "jct_p50": 2781.626043436,
+   "jct_p99": 5893.796789341,
+   "mechanism": {
+    "admission_holds": 0,
+    "admission_releases": 2873,
+    "currently_protected": 0,
+    "protected": 2315705,
+    "reclaimed_expired": 58383,
+    "reclaimed_forced": 52865,
+    "released": 2204457,
+    "stamps": 2873,
+    "unparked_by_hit": 0,
+    "victim_overrides": 0
+   },
+   "n": 50,
+   "stderr_tail": "INFO:    underlay of /etc/localtime required more than 50 (102) bind mounts\n",
+   "wall_s": 3550.4
+  }
+ }
+}

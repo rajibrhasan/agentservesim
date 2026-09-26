@@ -1,0 +1,43 @@
+{
+ "saga-plas": {
+  "rtx70b_swe50_j0.02": {
+   "attempts": 1,
+   "cell": "rtx70b_swe50_j0.02",
+   "decisions": {
+    "evict": 0,
+    "none": 0,
+    "protect": 2873,
+    "release": 2823
+   },
+   "error": null,
+   "flags": [
+    "--retention",
+    "saga-ttl",
+    "--retention-tau",
+    "2",
+    "--scheduling",
+    "plas"
+   ],
+   "jct_mean": 3454.01924325558,
+   "jct_p50": 2181.607712492,
+   "jct_p99": 10799.281319969,
+   "mechanism": {
+    "admission_holds": 0,
+    "admission_releases": 0,
+    "currently_protected": 0,
+    "protected": 2407330,
+    "reclaimed_expired": 49934,
+    "reclaimed_expired_chunk": 49934,
+    "reclaimed_forced": 740851,
+    "reclaimed_forced_chunk": 740851,
+    "released": 1616545,
+    "stamps": 2873,
+    "unparked_by_hit": 0,
+    "victim_overrides": 0
+   },
+   "n": 50,
+   "stderr_tail": "INFO:    underlay of /etc/localtime required more than 50 (102) bind mounts\nINFO:    Terminating squashfuse_ll after timeout\nINFO:    Timeouts can be caused by a running background process\n",
+   "wall_s": 4834.7
+  }
+ }
+}

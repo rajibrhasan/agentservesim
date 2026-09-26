@@ -1,0 +1,29 @@
+{
+ "saga-plas": {
+  "lb40_j0.1": {
+   "attempts": 1,
+   "cell": "lb40_j0.1",
+   "decisions": {
+    "evict": 0,
+    "none": 0,
+    "protect": 1708,
+    "release": 1668
+   },
+   "error": null,
+   "flags": [
+    "--retention",
+    "saga-ttl",
+    "--retention-tau",
+    "2",
+    "--scheduling",
+    "plas"
+   ],
+   "jct_mean": 7359.326726801475,
+   "jct_p50": 8024.637068875,
+   "jct_p99": 10540.702824541,
+   "n": 40,
+   "stderr_tail": "INFO:    underlay of /etc/localtime required more than 50 (102) bind mounts\n",
+   "wall_s": 3404.0
+  }
+ }
+}

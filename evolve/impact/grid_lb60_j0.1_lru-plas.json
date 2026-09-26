@@ -1,0 +1,27 @@
+{
+ "lru-plas": {
+  "lb60_j0.1": {
+   "attempts": 1,
+   "cell": "lb60_j0.1",
+   "decisions": {
+    "evict": 0,
+    "none": 2651,
+    "protect": 0,
+    "release": 0
+   },
+   "error": null,
+   "flags": [
+    "--retention",
+    "cache-lru",
+    "--scheduling",
+    "plas"
+   ],
+   "jct_mean": 11478.7827160081,
+   "jct_p50": 12370.509939414,
+   "jct_p99": 16608.493326894,
+   "n": 60,
+   "stderr_tail": "INFO:    underlay of /etc/localtime required more than 50 (102) bind mounts\n",
+   "wall_s": 5356.0
+  }
+ }
+}

@@ -1,0 +1,41 @@
+{
+ "saga-fcfs": {
+  "rtx70b_swe50_j0.02": {
+   "attempts": 1,
+   "cell": "rtx70b_swe50_j0.02",
+   "decisions": {
+    "evict": 0,
+    "none": 0,
+    "protect": 2873,
+    "release": 2823
+   },
+   "error": null,
+   "flags": [
+    "--retention",
+    "saga-ttl",
+    "--retention-tau",
+    "2"
+   ],
+   "jct_mean": 3745.1841301085997,
+   "jct_p50": 2792.656722409,
+   "jct_p99": 11101.02883041,
+   "mechanism": {
+    "admission_holds": 0,
+    "admission_releases": 0,
+    "currently_protected": 0,
+    "protected": 2407330,
+    "reclaimed_expired": 59459,
+    "reclaimed_expired_chunk": 59459,
+    "reclaimed_forced": 762037,
+    "reclaimed_forced_chunk": 762037,
+    "released": 1585834,
+    "stamps": 0,
+    "unparked_by_hit": 0,
+    "victim_overrides": 0
+   },
+   "n": 50,
+   "stderr_tail": "INFO:    underlay of /etc/localtime required more than 50 (102) bind mounts\n",
+   "wall_s": 3792.1
+  }
+ }
+}

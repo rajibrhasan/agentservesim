@@ -1,0 +1,25 @@
+{
+ "cache-lru": {
+  "imp_t32_j0.1": {
+   "attempts": 1,
+   "cell": "imp_t32_j0.1",
+   "decisions": {
+    "evict": 0,
+    "none": 1674,
+    "protect": 0,
+    "release": 0
+   },
+   "error": null,
+   "flags": [
+    "--retention",
+    "cache-lru"
+   ],
+   "jct_mean": 2203.4024168749997,
+   "jct_p50": 2547.548186739,
+   "jct_p99": 4684.888822723,
+   "n": 30,
+   "stderr_tail": "INFO:    underlay of /etc/localtime required more than 50 (102) bind mounts\n",
+   "wall_s": 1315.5
+  }
+ }
+}
