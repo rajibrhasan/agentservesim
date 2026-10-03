@@ -1,41 +1,4 @@
-"""The Program Control Block and the table that owns one per program.
 
-This is the cross-turn state a serving policy is allowed to read, and the
-only such state: the routing, scheduling, and retention policies in this
-package keep no per-program dictionaries of their own, so a decision is
-reproducible from the record alone. That is what makes the simulator mirror
-and the real harness comparable, and it is what bounds a policy to what a
-deployed system can actually observe at decision time (a trace also contains
-this turn's output length and this gap's true duration; a PCB never does).
-
-Five field groups, per the design section:
-  identifier      program_id
-  position        arrival_ts, turn_idx, turns_completed
-  service history attained_service_s
-  KV residency    kv_instance, context_tokens, kv_protected, kv_deadline_ts,
-                  kv_request_id
-  tool state      in_gap, tool_name, gap_started_ts
-
-The record is FROZEN. Every transition goes through ProgramTable, which
-replaces the record wholesale, so a policy holding a PCB cannot write to it
-and cannot accumulate hidden state behind it. Transitions happen at exactly
-three points:
-
-  1. turn release      on_turn_release   placement and position are written
-  2. turn completion   on_turn_complete  service accrues, tool state is set
-  3. memory pressure   on_memory_pressure  KV residency is refreshed
-
-Retention's own protect/evict stamp is part of (2), not a fourth point: the
-executor reports it through note_retention, which writes the same residency
-fields the pressure callback refreshes. Between these events the record is
-stable, which is what makes a decision reproducible from it.
-
-What is deliberately NOT here: instance state (queue depth, in-flight turns,
-free blocks). That is not program state, it does not belong to any one
-program, and policies that need it take an explicit probe (see
-RoutingPolicy.inflight and MinWasteRetention.load_probe). Keeping it out is
-the point of the boundary, not an omission.
-"""
 
 from __future__ import annotations
 

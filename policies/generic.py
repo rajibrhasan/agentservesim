@@ -1,9 +1,4 @@
-"""Values that are primitives rather than papers.
 
-A plain TTL, program-level FCFS: mechanisms the published policies are built
-out of and the search uses as seeds, but which no paper is. They live together
-so that a paper module contains a paper and nothing else.
-"""
 from typing import Callable, Optional
 
 from .base import KVPolicy, SchedulingPolicy

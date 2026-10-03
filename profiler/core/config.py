@@ -1,21 +1,4 @@
-"""Architecture spec loader + profile session args.
-
-The profiler pairs **two independent pieces of state** at every run:
-
-1. ``Architecture`` — static vLLM class catalog describing one model
-   family (llama3 / qwen3 / qwen3-moe / mixtral / phi-moe / ...).
-   Stored as a yaml under ``profiler/models/``. Shared
-   between profiler and (future) trace_generator.
-
-2. ``ProfileArgs`` — per-session settings that change between runs:
-   which checkpoint, which hardware label, TP sweep, dtype, KV cache
-   dtype, attention grid cap, etc. Passed as CLI arguments. No yaml.
-
-Per-checkpoint dimensions (hidden_size / num_heads / ...) live in
-LLMServingSim's ``configs/model/*.json`` and flow into vLLM via the
-HF ID or local path provided at the CLI. The profiler does not
-duplicate those fields.
-"""
+"""Architecture spec loader + profile session args."""
 
 from __future__ import annotations
 
@@ -436,21 +419,7 @@ class ProfileArgs:
 
     @property
     def effective_variant(self) -> str:
-        """Resolved variant — explicit override or auto-derived name.
-
-        When the user doesn't pass ``--variant``, we name the folder
-        after the engine flags that actually change kernel timings:
-        ``dtype`` and ``kv_cache_dtype``. The weight dtype defaults to
-        the model config's ``torch_dtype`` so the folder always carries
-        meaningful info (no bare "default").
-
-        Examples (typical BF16 models like Llama 3.x):
-
-            no flags                   → "bf16"          (from torch_dtype)
-            --kv-cache-dtype fp8       → "bf16-kvfp8"
-            --dtype fp8                → "fp8"
-            --dtype fp8 --kv... fp8    → "fp8-kvfp8"
-        """
+        """Resolved variant — explicit override or auto-derived name."""
         if self.variant is not None:
             return self.variant
 

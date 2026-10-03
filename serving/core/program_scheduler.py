@@ -1,46 +1,4 @@
-"""Program-aware batch scheduling.
 
-The old scheduler is request-scoped: it forms batches under a token budget and
-knows nothing about the program a turn belongs to, so program-level ordering had
-to be bolted on by stamping priorities from outside. This plane asks the
-orchestrator instead, and keeps no program state of its own.
-
-It owns exactly two things: which requests are waiting, and which are running.
-Everything else it reads -- program state from `program_orchestrator`, memory
-from `program_kv`.
-
-Engine types, not new ones
--------------------------
-This plane schedules `Request` objects and emits the engine's `Batch`. It does
-NOT define its own turn or batch type, for the same reason the KV plane does not
-keep its own block records: `Request` already carries everything a turn needs
-(`num_computed_tokens`, `input_hash_ids`, `priority`, `queuing_delay`,
-`first_sched_ts`, `npu_cache_hit`, `n_preempted`) and everything downstream --
-`generate_trace`, the output writer, the router -- speaks these types. A
-parallel type would need translating at every boundary and would drift from the
-originals at the first field anyone added.
-
-Program identity rides on the request the way the engine already attaches it:
-`session_id` / `sub_request_index` for agentic sessions, `workflow_id` /
-`node_id` for DAG workflows. All four are initialised in `Request.__init__`
-(to None), so they are read directly -- AGENTS.md forbids `getattr` fallbacks
-on Request attributes, and a fallback here would hide the case where identity
-was never attached instead of surfacing it.
-
-Three decisions are the policy's, and they are the three the contract names:
-
-    priority(program, now)         rank a waiting turn
-    admit(program, pressure, now)  run it now, or hold it back
-    victim(candidates, now)        who gets preempted when KV runs out
-
-They arrive as plain callables over engine state, not as contract objects, so
-the engine stays independent of the policy contract and the adapter translates.
-A policy that declines -- returns None -- gets the engine's default, every time.
-
-Preemption is RECOMPUTE, as in vLLM v1: the victim's KV is released and its
-prefill progress discarded, so it re-prefills when it next runs. That is the
-expensive path, and counting it is how this plane is checked against real vLLM.
-"""
 from __future__ import annotations
 
 import os
@@ -226,18 +184,7 @@ class ProgramBatchScheduler:
 
     def add_request(self, req, is_init=True, workflow_id=None, node_id=None,
                     priority=None, session_id=None, sub_request_index=None):
-        """A request enters the system. Queued, not running.
-
-        Signature matches the old scheduler because the router calls it: `req`
-        is a LIST of Request fields, not a Request, and the scheduler is what
-        constructs one. Program identity arrives as keywords and is attached
-        the same way here.
-
-        The queue is kept sorted on insert rather than sorted on read: turns
-        released mid-run by a tool gap arrive out of arrival order, and
-        appending would let a late arrival sit ahead of an earlier one whenever
-        the policy declines to rank.
-        """
+        """A request enters the system. Queued, not running."""
         new_req = Request(*(req), is_init=is_init)
         if self.max_model_len is not None and new_req.output > self.max_model_len:
             raise ValueError(f'Request {new_req.id} context {new_req.output} exceeds '
@@ -387,18 +334,7 @@ class ProgramBatchScheduler:
     # ------------------------------------------------------------- the step
 
     def schedule(self, now: float, sys=None, batch_id=-1) -> Optional[Batch]:
-        """Form one batch, or None when there is nothing to run.
-
-        `sys` and `id` are accepted and ignored: the main loop passes the
-        ASTRA-Sim system and batch ids positionally, and this plane does not
-        use them -- it does not multiplex batches across NPU ids the way the
-        old scheduler does.
-
-        Running requests are served before waiting ones, as vLLM v1 does: a
-        request that has already paid its prefill is cheaper to continue than a
-        new one is to start, and reversing that changes throughput without
-        changing any policy.
-        """
+        """Form one batch, or None when there is nothing to run."""
         # A batch is formed ONLY on the instance's start NPU. Every other NPU
         # of the instance polls for the batch that already exists and marks
         # itself as having fired it. Forming a new batch on each poll leaves
@@ -603,26 +539,7 @@ class ProgramBatchScheduler:
         return batch
 
     def _prefix_match(self, req: Request) -> None:
-        """Advance this request past the prompt tokens already in the cache.
-
-        The KV plane already declines to charge for them -- `allocate` probes
-        the tree and reserves only the delta -- but memory is half the story: a
-        cached token must also not be RECOMPUTED. Without this the prefix cache
-        saves pool space and nothing else, every turn re-prefills its whole
-        prompt, and the retention policies this simulator exists to compare are
-        scored in a world where keeping a prefix buys nothing.
-
-        Re-matched on every attempt until the prefix is locked, because vLLM
-        looks computed blocks up at schedule time: a hit taken on an earlier
-        attempt can be evicted while the request waits, and acting on a stale
-        hit means skipping compute for tokens that are no longer resident.
-
-        The cap at `input - 1` is vLLM's, verbatim in intent
-        (v1/core/kv_cache_manager.py: "When all tokens hit the cache, we must
-        recompute the last token to obtain logits"). Without it a fully-cached
-        prompt reaches `num_computed_tokens == original_input`, `is_prefill()`
-        goes false, and the request is never scheduled at all.
-        """
+        """Advance this request past the prompt tokens already in the cache."""
         if not self.enable_prefix_caching or not req.is_prefill():
             return
         if not req.input_hash_ids:
@@ -784,18 +701,7 @@ class ProgramBatchScheduler:
 
     def _acquire(self, req: Request, n_tokens: int, now: float,
                  may_preempt: bool) -> bool:
-        """Get KV for this request's next `n_tokens`, reclaiming if needed.
-
-        The order sets the preemption rate, so it is explicit:
-
-          1. ask the KV plane outright
-          2. on failure, reclaim -- cached blocks and expired pins cost only a
-             later cache miss
-          3. only then, and only for a RUNNING request, preempt someone
-
-        Skipping step 2 is how a simulator preempts many times more often than
-        the engine it models while every aggregate still looks plausible.
-        """
+        """Get KV for this request's next `n_tokens`, reclaiming if needed."""
         pid = program_of(req)
         if pid is None:
             return True                     # flat request: no program KV plane
@@ -1104,22 +1010,7 @@ class ProgramBatchScheduler:
         return prompt_t, gen_t, end_reqs
 
     def turn_complete(self, req: Request, now: float) -> None:
-        """Tell the orchestrator a program's turn is over and its gap begins.
-
-        Everything it needs is already known to one of the two planes, so
-        nothing is passed in but the request and the clock. Which node finished
-        is on the request; what that node was is the orchestrator's in-flight
-        record; whether more turns follow is the trace, which the orchestrator
-        holds. The old router had to be told all three, and being told a fact
-        you could look up is how two copies of it start to differ.
-
-        `service_s` is measured the way the real driver measures it -- first
-        schedule to last token, prefill included (bench/core/runner.py:
-        `service_s = max(0.0, lt - st)`). An earlier version used
-        `latency - queuing_delay`, which excludes prefill and so under-charges
-        exactly the large-prompt programs a service-ranking policy exists to
-        deprioritise.
-        """
+        """Tell the orchestrator a program's turn is over and its gap begins."""
         if req in self.running:
             self.running.remove(req)
         pid = program_of(req)

@@ -1,24 +1,4 @@
-"""vLLM benchmark runner — strict replay of an existing dataset.
 
-The runner reads a LLMServingSim-format JSONL workload (the same format
-``python -m workloads.generators sharegpt`` produces and ``python -m serving
---dataset`` consumes) and replays every request through vLLM with its
-``input_tok_ids`` and ``output_toks`` pinned, so the run is bit-for-bit
-comparable to the simulator's view of the same workload.
-
-White-room implementation against ``../vllm``:
-  * ``vllm.v1.engine.async_llm.AsyncLLM`` — async engine, ``generate()``
-    yields ``RequestOutput`` per chunk, ``RequestOutput.metrics`` carries
-    per-request ``RequestStateStats`` (arrival_time / queued_ts /
-    scheduled_ts / first_token_ts / last_token_ts).
-  * ``vllm.v1.metrics.loggers.StatLoggerBase`` — pluggable per-engine stat
-    logger; we hook it via ``BenchStatLogger`` to capture per-iteration
-    scheduler/iteration stats for ``timeseries.csv``.
-
-Output: ``<output-dir>/{meta.json, requests.jsonl, timeseries.csv}``.
-The dataset itself is not modified — generation lives in
-``workloads/generators``.
-"""
 
 from __future__ import annotations
 import policies as _policies

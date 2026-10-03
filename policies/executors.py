@@ -1,10 +1,4 @@
-"""The machinery that applies a decision and writes it down.
 
-Separate from the bases because an executor is host-side plumbing -- it holds
-the KV handle, the log file, the in-flight vector -- while a base is the
-contract a paper implements. Mixing them meant every policy module imported the
-logging machinery it never touches.
-"""
 from __future__ import annotations
 
 import json

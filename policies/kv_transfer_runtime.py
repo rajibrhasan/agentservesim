@@ -1,10 +1,4 @@
-"""Transfer ownership protocol shared by simulator and engine adapters.
 
-This coordinates existing allocator reservations; it does not allocate tensors
-or invent transfer latencies. A backend must reserve real destination storage,
-launch copies and report completion across every participating rank. The source
-remains owned until all copies finish. Policy code chooses what to transfer.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass

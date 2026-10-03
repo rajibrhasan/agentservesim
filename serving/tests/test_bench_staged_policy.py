@@ -14,7 +14,7 @@ class StagedPolicyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as scratch:
             staged = pathlib.Path(scratch) / 'harness'
             shutil.copytree(ROOT / 'harness', staged)
-            shutil.copyfile(ROOT / 'evolve/gate_only_scheduling.py',
+            shutil.copyfile(ROOT / 'evolve/seed_policy.py',
                             staged / 'evolved_scheduling.py')
             result = subprocess.run([sys.executable, '-c', '''
 import asyncio, sys

@@ -5,13 +5,7 @@ import os
 import json
 MB_TO_BYTE = 1024 * 1024
 
-#: SIM_ADMIT_VALVE=0 disables breaking pins on the ordinary allocation path,
-#: leaving only the stall-recovery valves. An ablation handle, not a tuning
-#: knob: the path mirrors vLLM's get_new_blocks, which reclaims protected
-#: blocks for any allocation the free queue cannot satisfy, so OFF is the less
-#: faithful setting. It exists because the path is new (2026-09-15) and
-#: accounts for a third of all forced reclaims, and seed's error moved
-#: -4.5% -> -15.3% when it landed; turning it off says whether it is the cause.
+
 _ADMIT_VALVE = os.environ.get("SIM_ADMIT_VALVE", "1") != "0"
 
 from .request import *
@@ -424,20 +418,7 @@ class Scheduler:
                     return batch
     
     def _running_step_kv(self, running):
-        """KV the already-running set will take this step, in bytes.
-
-        vLLM allocates a running request's blocks for the step inside
-        schedule(), BEFORE the admission gate is consulted for any waiting
-        request (vllm/v1/core/sched/scheduler.py: the running loop calls
-        allocate_slots, then the waiting loop asks the gate), so the gate
-        reads a free queue that already excludes them. This gate runs before
-        the step's own reserve_kv, so without this it counts that space as
-        free and admits turns the engine would have held.
-
-        Sized the way the token-budget loop below will size it -- 1 token per
-        decode, the chunk cap for an ongoing prefill -- because that is what
-        reserve_kv will charge a few lines later.
-        """
+        """KV the already-running set will take this step, in bytes."""
         if not running:
             return 0
         toks = {}
@@ -470,12 +451,10 @@ class Scheduler:
             if paper_budget is not None and not self.enable_chunked_prefill:
                 raise ValueError('InferCept paper scheduling requires chunked prefill')
 
-            # vLLM v1 order: RUNNING requests first, in admission order; then
-            # WAITING requests follow the configured queue. FCFS prepends
-            # preempted work; priority queues reinsert by priority and arrival
-            # even after preemption. Priority never reorders running requests.
-            # InferCept's native session scheduler instead re-sorts running
-            # calls by their original program arrival on every iteration.
+            # vLLM v1 order: RUNNING requests first, in admission order; then WAITING
+            # requests follow the configured queue. FCFS prepends preempted work;
+            # priority queues reinsert by priority and arrival even after preemption.
+            # Priority never reorders running requests.
             running = sorted((r for r in arrived if r.admit_seq is not None),
                              key=self._running_order_key)
             waiting = [r for r in arrived if r.admit_seq is None]
@@ -526,12 +505,10 @@ class Scheduler:
             gen_req = [req for req in batch_req if not req.is_prefill()]
             # gen_req = [req for req in batch_req if not (req.num_computed_tokens >= req.original_input)]
             
-            # ============ STEP 0: Prefix Matching ============
-            # Only match prefix for NEW prefill requests (first chunk)
-            # Ongoing chunked prefills already have their prefix cache info
-            # for req in batch_req:
-            #     if req.is_prefill():
-            #         self.memory.prefix_match(req)
+            # ============ STEP 0: Prefix Matching ============ Only match prefix for
+            # NEW prefill requests (first chunk) Ongoing chunked prefills already have
+            # their prefix cache info for req in batch_req: if req.is_prefill():
+            # self.memory.prefix_match(req)
             
             # ============ STEP 1: Token budget allocation ============
             scheduled_tokens = {}
@@ -621,21 +598,17 @@ class Scheduler:
                     batch_req = batch_req[:-1]
                     batch_len -= 1
             
-            # ============ STEP 1.5 + 2: Lock prefix and fit test, one request at a time ============
-            # vLLM v1 walks the waiting queue in order: a request's cached
-            # blocks are pinned only when IT is admitted, and the blocks it
-            # needs may evict any unreferenced block, including the cached
-            # prefix of a request further back in the queue. Locking the
-            # prefix of every candidate first and then testing the fit
-            # against what was left evictable starved admission under a deep
-            # waiting queue: with dozens of waiting requests whose (mostly
-            # cached) prefixes covered the whole pool, the union of their
-            # locks left nothing evictable, the head request could not fit
-            # its few uncached tokens, and the instance idled with a
-            # 100%-evictable pool (flat SWE-bench open-loop trace, job
-            # 40584882_0). Lock incrementally and test the cumulative fit
-            # after each lock; per-request KV demand is non-negative, so the
-            # first failure is the longest fitting prefix of batch_req.
+            # ============ STEP 1.5 + 2: Lock prefix and fit test, one request at a time
+            # ============ vLLM v1 walks the waiting queue in order: a request's cached
+            # blocks are pinned only when IT is admitted, and the blocks it needs may
+            # evict any unreferenced block, including the cached prefix of a request
+            # further back in the queue. Locking the prefix of every candidate first and
+            # then testing the fit against what was left evictable starved admission
+            # under a deep waiting queue: with dozens of waiting requests whose (mostly
+            # cached) prefixes covered the whole pool, the union of their locks left
+            # nothing evictable, the head request could not fit its few uncached tokens,
+            # and the instance idled with a 100%-evictable pool (flat SWE-bench open-
+            # loop trace, job 40584882_0).
             kv_size = 0
             evict_size = 0
             temp_len = 0
@@ -848,14 +821,13 @@ class Scheduler:
                         victim.admit_seq if victim.admit_seq is not None else -1,
                         self._admit_counter, len(batch_req), -1,
                         victim.original_input, victim.npu_cache_hit))
-                    # vLLM v1 preempts by RECOMPUTE: every block of the victim
-                    # is released and it re-enters as a prefill of prompt +
-                    # tokens generated so far (its resident prefix is picked
-                    # up again by prefix_match if it survives in the LRU).
-                    # Marking it evicted without unlocking its cached nodes
-                    # (the swap path below) frees nothing under prefix
-                    # caching, so the loop preempted every decode and the
-                    # instance passed forever with a full pool.
+                    # vLLM v1 preempts by RECOMPUTE: every block of the victim is
+                    # released and it re-enters as a prefill of prompt + tokens
+                    # generated so far (its resident prefix is picked up again by
+                    # prefix_match if it survives in the LRU). Marking it evicted
+                    # without unlocking its cached nodes (the swap path below) frees
+                    # nothing under prefix caching, so the loop preempted every decode
+                    # and the instance passed forever with a full pool.
                     self._preempt_recompute(victim)
                     self.num_preemptions += 1
                     self._preempted_this_step = True
@@ -892,13 +864,12 @@ class Scheduler:
                 batch_req = keep + [r for r in batch_req if r not in keep]
                 temp_len = len(keep)
                 if temp_len == 0:
-                    # Preempted everything and admitted nothing. vLLM would
-                    # idle this step and retry next tick, but the simulator
-                    # raises on an idle instance with no future arrival, so
-                    # this must make progress in-call: break pins for the
-                    # head's full remaining prefill (Continuum's running==0
-                    # valve) and retry admission, deviating from the
-                    # no-waiting-admission-after-preempt rule only in this
+                    # Preempted everything and admitted nothing. vLLM would idle this
+                    # step and retry next tick, but the simulator raises on an idle
+                    # instance with no future arrival, so this must make progress in-
+                    # call: break pins for the head's full remaining prefill
+                    # (Continuum's running==0 valve) and retry admission, deviating from
+                    # the no-waiting-admission-after-preempt rule only in this
                     # otherwise-fatal state.
                     if (self.memory.kv_protection is not None
                             and not self.inflight and batch_req):

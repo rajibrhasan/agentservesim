@@ -145,19 +145,7 @@ def _cycle_expert_ids(
 
 @contextmanager
 def force_moe_routing(route: ExpertRoute | None) -> Iterator[None]:
-    """Patch ``FusedMoE.forward_native`` to use ``route`` when called.
-
-    If ``route`` is None the function is a no-op (useful for dense
-    profile categories where we still pass through the MoE-aware
-    execute path).
-
-    The patch is layer-scoped: only the specific FusedMoE whose
-    ``layer_name`` matches ``route.layer_name`` is affected; other MoE
-    layers (if any) fall through to their normal forward. This matters
-    if the model has multiple MoE layers and we're profiling only one
-    at a time. For the single-layer test model we override to 1
-    decoder layer, this is moot.
-    """
+    """Patch ``FusedMoE.forward_native`` to use ``route`` when called."""
     if route is None:
         yield
         return
@@ -189,12 +177,9 @@ def force_moe_routing(route: ExpertRoute | None) -> Iterator[None]:
                 f"expected {expected_shape}, got {tuple(route.ids.shape)}"
             )
 
-        # The router's public API is select_experts(...). We override
-        # the underlying _compute_routing to return our forged pair,
-        # restore it after the single call completes. This is cleaner
-        # than swapping select_experts wholesale because
-        # select_experts does normalization / validation around
-        # _compute_routing that we still want to run.
+        # The router's public API is select_experts(...). We override the underlying
+        # _compute_routing to return our forged pair, restore it after the single call
+        # completes.
         original_select_experts = self.router.select_experts
         original_compute_routing = self.router._compute_routing
 

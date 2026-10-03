@@ -1,22 +1,4 @@
-"""Compatibility shim. The policies live in `policies/`.
 
-Still here for one concrete reason: `evolve/sandbox.py` allows an evolved
-candidate to import `harness.retention`, `harness.program`,
-`harness.waste_model` and `harness.scheduling`, and every champion already
-evolved -- plus every `best_program.py` under `evolve/results/` -- was written
-against those names. Those are records of runs that happened. Removing the
-names would not make an old candidate wrong, it would make it unimportable,
-which is a different and worse thing.
-
-`harness.X` and `policies.X` resolve to the SAME module object, not to two
-copies. That matters: a champion importing `harness.evolved_joint` while the
-staged shim imports `policies.evolved_joint` would otherwise get two instances
-of the candidate, with separate module state, and a search would score a
-policy that is not the one it ran.
-
-Delete this package once the sandbox allowlist, the seeds and the recorded
-champions have all moved.
-"""
 import importlib
 import importlib.abc
 import importlib.util

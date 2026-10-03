@@ -1,9 +1,4 @@
-"""Physical block ownership for policy-directed vLLM CPU transfers.
 
-Pools are vLLM BlockPool objects. The submit callback queues worker DMA metadata,
-and completion must be acknowledged by every worker rank before ready() succeeds.
-Each handle owns its own references, including when two requests share a block.
-"""
 from dataclasses import dataclass
 from typing import Dict, Tuple
 

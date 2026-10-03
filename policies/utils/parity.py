@@ -1,22 +1,4 @@
-"""Phase B decision-parity checker (spec: policy_impl_spec.md).
 
-The real harness and the simulator mirror each emit JSONL decision
-logs per knob (retention.py, scheduling.py, routing.py records). The
-simulator must reproduce the identical decision sequence on the same
-trace and predictions; this module diffs the two logs and reports the
-first divergences.
-
-Compared fields per knob (timestamps are never compared; the two
-sides run on different clocks):
-- retention: (program_id, turn_idx, action, request_id) plus, when
-  present on both sides, blocks and the info scores (w_preserve,
-  w_discard compared with a relative tolerance).
-- scheduling: (program_id, turn_idx, priority).
-- routing: (program_id, turn_idx, instance) plus info["fallback"].
-
-Order matters: logs are compared position by position, because the
-decision sequence, not the decision set, is the claim.
-"""
 
 from __future__ import annotations
 

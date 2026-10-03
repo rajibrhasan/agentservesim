@@ -1,17 +1,19 @@
-#!/bin/bash
-# Local install helper for the vllm.
-#
-# The vllm runs inside the vLLM Docker container by default
-# (see docker-vllm.sh). This script is for bare-metal setups where you
-# want to install everything into a local uv venv.
+
 
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$REPO_ROOT"
 
 uv venv --python 3.12
 
 # vLLM brings in torch, pydantic, pyyaml, and rich as transitive
 # dependencies — no need to list them separately.
-VLLM_USE_PRECOMPILED=1 uv pip install vllm==0.19.0 --verbose --no-build-isolation
+# The source is vendored without upstream Git metadata: pin its version and kernels.
+export VLLM_VERSION_OVERRIDE=0.19.0
+export VLLM_PRECOMPILED_WHEEL_COMMIT=2a69949bdadf0e8942b7a1619b229cb475beef20
+VLLM_USE_PRECOMPILED=1 uv pip install --editable "$REPO_ROOT/vllm" --verbose
 
 # Extra deps for workloads.generators (HF dataset loading) and
 # bench.core.plots (matplotlib).

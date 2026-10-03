@@ -1,14 +1,4 @@
-"""Custom vLLM stat logger that captures per-tick scheduler + iteration stats.
 
-Subclasses ``StatLoggerBase`` (from ``vllm.v1.metrics.loggers``) and stores
-every ``record()`` call as a row in memory. The runner snapshots these
-rows on shutdown and writes them to ``timeseries.csv``.
-
-Because vLLM calls ``record()`` once per scheduling iteration (not on a
-fixed wall-clock cadence), the runner downsamples to ``tick_seconds`` when
-writing the CSV — this keeps the file small without losing the shape of
-the curve.
-"""
 
 from __future__ import annotations
 

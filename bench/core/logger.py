@@ -1,23 +1,4 @@
-"""Logger + progress UI for the bench module.
 
-Mirrors the shape of ``profiler.core.logger`` so the three modules
-(profiler / bench / serving) share the same look and call patterns.
-The rest of the bench package is forbidden from calling ``print()``
-directly — every user-facing line goes through this module.
-
-Conventions:
-
-* Built on stdlib ``logging`` so verbosity is just a log level.
-* Uses ``rich`` for colourised console output, soft-wrapped lines,
-  and progress bars. ``rich`` ships with vLLM as a transitive
-  dependency, so no extra install.
-* ``capture_stdio()`` redirects C-level stdout/stderr during vLLM
-  engine boot — vLLM's worker processes print from C++ / CUDA init
-  which bypasses Python streams.
-
-Callers should ``from bench.core import logger as log`` so call sites
-read ``log.info(...)``, ``log.success(...)``, ``log.stage(...)``, etc.
-"""
 
 from __future__ import annotations
 
@@ -118,16 +99,7 @@ def configure(level: int | str = logging.INFO,
 
 @contextmanager
 def capture_stdio(path: str | None = None) -> Iterator[None]:
-    """Redirect fd 1 and 2 to a persistent log or temporary startup capture.
-
-    vLLM's engine startup prints from C++ (pybind11 / torch) and CUDA
-    library init — those bypass ``sys.stdout``, so contextlib.redirect_stdout
-    is insufficient. On exception inside the block, the captured output is
-    re-emitted at ERROR for post-mortem.
-
-    A supplied path persists output from children after this context exits.
-    Without a path, this is a no-op at DEBUG verbosity.
-    """
+    """Redirect fd 1 and 2 to a persistent log or temporary startup capture."""
     if path is None and _logger.isEnabledFor(logging.DEBUG):
         yield
         return

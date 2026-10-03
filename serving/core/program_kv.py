@@ -1,49 +1,4 @@
-"""Program-aware KV: who occupies what, and what can be taken back.
 
-This plane does **not** keep its own block records. The radix prefix index is
-the block store -- every node already carries its tokens (`key`), its live
-reference count (`lock_ref`), when it was last touched, and, since the D1 work,
-the set of programs whose prefix covers it (`owners`). A second ledger here
-would be two owners of one fact, which is the failure this whole design exists
-to remove.
-
-So `ProgramKVManager` is a view and a decision layer over `RadixCache`:
-it classifies what the tree holds, charges it to programs, and decides what to
-give back under pressure. `program_orchestrator` owns program state; this owns
-nothing, and that is deliberate.
-
-The classification, and why the tree's own words are not enough
---------------------------------------------------------------
-The tree splits two ways: `protected_size_` (nodes with `lock_ref > 0`) and
-`evictable_size_` (everything else). Note the vocabulary clash -- what the tree
-calls *protected* is a live reference, not a policy pin. A block a retention
-policy asked to keep across a tool gap has `lock_ref == 0` and counts as
-**evictable** to the tree.
-
-That is exactly right for the tree and exactly wrong for a policy, so this plane
-splits the evictable half again:
-
-    LOCKED   lock_ref > 0. A live turn needs it. Unreclaimable at any price.
-    PINNED   lock_ref == 0, but an owning program holds a pin. Reclaimable only
-             by breaking that pin.
-    CACHED   lock_ref == 0, no pinned owner. Ordinary prefix-cache content.
-
-vLLM's `kv_cache_usage` counts cached blocks as **free**, because its block pool
-evicts them without asking. So the quantity comparable with real pressure is
-LOCKED + PINNED. Reporting total occupancy as "utilization" hands a policy a
-number that means something different on each host, and then the same policy is
-not the same policy -- with no counter showing it.
-
-Only the PINNED share needs a walk; LOCKED and the totals come from the
-counters the tree already maintains.
-
-Shared prefixes
----------------
-A node covering N programs has one length and N owners, so a program's footprint
-is undefined until a charging rule is chosen. The rule is explicit
-(`Attribution`) and part of the contract's observable semantics: a retention
-policy is reproducible across hosts only if both charge sharing the same way.
-"""
 from __future__ import annotations
 
 import heapq
@@ -144,12 +99,10 @@ class ProgramKVManager:
         #: onto the new parent, so a held node stays held and
         #: `dec_lock_ref` still walks the right chain.
         self._lock_holder: Dict[str, object] = {}
-        #: `occupancy` walks the whole tree, and the scheduler asks for it
-        #: several times per step (can_fit, pressure, admit). The tree only
-        #: changes on commit/evict/offload/pressure, so the walk is cached and
-        #: invalidated on those rather than repeated. Without this a step costs
-        #: O(nodes) several times over and a cell runs an order of magnitude
-        #: slower than the old model, which keeps incremental counters.
+        # `occupancy` walks the whole tree, and the scheduler asks for it several times
+        # per step (can_fit, pressure, admit). The tree only changes on
+        # commit/evict/offload/pressure, so the walk is cached and invalidated on those
+        # rather than repeated.
         self._occ_cache = None
 
     # ------------------------------------------------------------- walking
@@ -280,22 +233,7 @@ class ProgramKVManager:
         return tuple(per[t] for t in sorted(Tier))
 
     def sync_footprints(self) -> None:
-        """Write every resident program's footprint into the orchestrator.
-
-        One direction only: this plane computes, the orchestrator stores.
-
-        ONE pass over the tree for all three quantities and all programs. The
-        obvious spelling -- call `context_tokens`, `charged` and `_tier_tokens`
-        per program -- is three full walks per resident program, and this runs
-        every step: fifty resident sessions over a few thousand nodes puts the
-        node-visit count into the billions for a single cell, which is most of
-        the runtime rather than a part of it. Each node knows its own owners, so
-        the walk can be turned inside out and every program charged as it goes.
-
-        The per-program methods stay: they are the readable definition of each
-        quantity, they are what the tests check this against, and they are cheap
-        when something wants one program rather than all of them.
-        """
+        """Write every resident program's footprint into the orchestrator."""
         programs = list(self.orch.on_instance(self.instance))
         if not programs:
             return
@@ -406,27 +344,7 @@ class ProgramKVManager:
 
     def commit(self, program_id: str, token_ids: Sequence[int],
                owner: Optional[str] = None) -> int:
-        """Publish computed tokens to the prefix tree and lock them. Phase two.
-
-        Called once the step is confirmed. Until this runs the tokens are
-        reserved but unmatchable; after it they are LOCKED -- a live turn needs
-        them, so no policy and no valve may take them -- and the reservation is
-        dropped, because the tree now accounts for them.
-
-        A turn holds exactly ONE lock, on the last node it has computed, and
-        this MOVES it: every decode step commits a longer key, so taking a fresh
-        lock each time without dropping the previous one leaves a turn that
-        generated twenty tokens holding nineteen locks it will never drop. A
-        locked node cannot be reclaimed by anything -- not pressure, not a
-        policy -- so the pool fills with the residue of finished work and the
-        scheduler eventually cannot place a single token. That is exactly what
-        happened here once decode tokens started occupying KV at all: 140 of 141
-        requests finished and the pool stood at 179,995 locked, 0 cached.
-
-        `owner` names the TURN. It defaults to the program, which is right until
-        a fan-out puts two turns of one program in flight at once -- then they
-        are two holders and must not share a slot.
-        """
+        """Publish computed tokens to the prefix tree and lock them. Phase two."""
         full = list(token_ids)
         if not full:
             return 0
@@ -494,29 +412,7 @@ class ProgramKVManager:
         return len(key)
 
     def hold_prefix(self, owner: str, token_ids: Sequence[int]) -> int:
-        """Lock the cached prefix a request was just credited a hit against.
-
-        The scheduler advances `num_computed_tokens` to the matched depth and
-        then never recomputes those tokens -- but until they are locked they are
-        CACHED, and the very next thing that happens is the reservation for this
-        request's own step calling `_evict_lru`, which takes the oldest CACHED
-        blocks it can find. Those are usually this request's: it was preempted a
-        moment ago, so its chain is the least recently used thing in the tree.
-
-        The request is then credited a prefix it no longer has. `commit`
-        publishes the FULL key, so the tree grows by the whole context while
-        `allocate` was charged for one chunk, and the pool goes over capacity by
-        the difference -- 487 tokens in the case that found this.
-
-        The old plane does exactly this (scheduler.py:575, `lock_prefix`), and so
-        does vLLM: `get_computed_blocks` hands the blocks to the request's
-        coordinator, which holds them. The restructure dropped it.
-
-        Written through `_lock_holder`, the same one-slot-per-turn protocol
-        `commit` moves and `release`/`drop_hold` drop. An earlier attempt took a
-        raw `inc_lock_ref` outside that slot and leaked one lock per decode step;
-        the slot is what makes the five sites agree.
-        """
+        """Lock the cached prefix a request was just credited a hit against."""
         key = list(token_ids)
         if not key:
             return 0
@@ -550,16 +446,8 @@ class ProgramKVManager:
 
     def drop_reservation(self, program_id: str,
                          owner: Optional[str] = None) -> int:
-        """Give back a reservation whose step will never complete -- the turn
-        was preempted. Without this the pool leaks the difference.
-
-        Tokens only. The hold `allocate` took on the matched prefix is dropped
-        by whoever ends the turn -- `release` on completion or preemption,
-        `drop_hold` on an acquire that never succeeded. Doing it here as well
-        double-decremented every preempted request (`_preempt` calls both), and
-        a node at lock_ref -1 is invisible to `_evict_lru`, which requires
-        exactly 0: 590 evictable tokens that nothing could reclaim.
-        """
+        """Give back a reservation whose step will never complete -- the turn was
+        preempted. Without this the pool leaks the difference."""
         self._invalidate()
         return self._inflight.pop(owner or program_id, 0)
 
@@ -578,19 +466,7 @@ class ProgramKVManager:
 
     def release(self, token_ids: Sequence[int],
                 owner: Optional[str] = None) -> int:
-        """Unlock a turn's blocks. They become ordinary cache; they are NOT freed.
-
-        This is the difference between release and evict, and it is the whole
-        reason retention policy exists: after release the prefix survives as
-        cache and may be reused on the next turn, unless pressure takes it. A
-        pin is what stops pressure taking it; `evict` is what deliberately
-        throws it away.
-
-        Drops the one lock `commit` holds for this turn. Given an `owner` it
-        drops exactly that lock rather than re-deriving it from the key, which
-        matters because the key a caller releases with may not resolve to the
-        node the lock was taken on -- block alignment moves the match.
-        """
+        """Unlock a turn's blocks. They become ordinary cache; they are NOT freed."""
         if owner is not None and owner in self._lock_holder:
             freed = self._unlock(self._lock_holder.pop(owner))
             # The turn is over: its unfilled tail is not resident any more

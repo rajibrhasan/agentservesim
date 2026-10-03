@@ -1,82 +1,8 @@
-"""Joint policy candidate (retention + scheduling) for the automated
-policy search.
+"""Evolved joint retention and scheduling policy.
 
-This file is the unit the search mutates. Only the region between the
-EVOLVE-BLOCK markers changes; everything outside it is the fixed
-contract. The simulator loads it as ``--retention evolved --scheduling
-evolved``: EvolvedRetention decides which programs' KV stays resident
-across tool gaps, EvolvedScheduling decides which waiting turn runs,
-which running turn is preempted under pressure, and whether a waiting
-turn is submitted to the engine at all. The two classes read the SAME
-Program Control Block, so a retention decision is visible to the
-scheduler as pcb.kv_protected on the program's next turn, and a
-scheduling decision changes when (and whether) the protected KV is
-ever used. Evolve them together.
+Both planes observe shared program state. Deadlines use absolute seconds;
+lower priority runs first. The policy is registered as gate."""
 
-Retention contract (harness/retention.py, RetentionPolicy):
-
-  on_turn_complete(pcb, request_id, now) -> ("protect", deadline_ts)
-        | ("evict", None) | None
-      Called when a turn's response finishes and the program enters
-      its tool gap. "protect" pins the program's context in the KV
-      pool until deadline_ts (seconds, absolute) or the next arrival;
-      "evict" drops it now; None leaves it to the engine's LRU.
-  on_turn_arrival(pcb, now) -> "release" | None
-      Called when the program's next turn arrives. "release" unpins
-      the context (it stays cached, exposed to LRU); None keeps the
-      pin until its deadline.
-  A pin holds pool space. Under pressure the engine's valve breaks
-  pins expired-first, then latest-deadline-first, so pinning more
-  than the pool can hold is not free: it evicts other programs' KV.
-  self.signals.kv_utilization (0..1, may be None) is the pool state.
-
-Scheduling contract (harness/scheduling.py, SchedulingPolicy):
-
-  priority(pcb, now) -> int | None
-      Once per turn at submission. Among WAITING requests the
-      SMALLEST value is admitted first; arrival breaks ties. None =
-      unstamped (stock FCFS for that turn). Running requests are
-      never reordered.
-  victim(candidates, now) -> int | None
-      Under memory pressure, which RUNNING request to preempt (index
-      into candidates, a list of VictimView: pcb, priority,
-      prompt_tokens, computed_tokens, generated_tokens, is_prefill).
-      Preemption is by RECOMPUTE: the victim loses its whole KV and
-      re-prefills prompt + tokens generated so far. None = engine
-      default (largest priority value, latest arrival).
-  admit(pcb, now, view) -> bool
-      Gateway-side admission gate, called in queue order every
-      scheduling tick for each waiting turn. False holds the turn this
-      tick (it keeps its place); True lets the engine try to fit it.
-      view is a QueueView: n_running, n_waiting, n_inflight,
-      kv_utilization, kv_free_tokens, kv_evictable_tokens,
-      prompt_tokens, cached_tokens. Holding is never free: an idle
-      engine admits the head regardless, and a held turn's program
-      keeps its KV pinned (if pinned) while it waits.
-
-Observation boundary (both classes): ``now`` (seconds) and the PCB:
-  pcb.turn_idx, pcb.turns_completed, pcb.arrival_ts,
-  pcb.attained_service_s, pcb.context_tokens, pcb.tool_name,
-  pcb.in_gap, pcb.gap_started_ts, pcb.gap_elapsed_s(now),
-  pcb.kv_protected, pcb.kv_deadline_ts, pcb.kv_instance
-Nothing about the future (output length, next gap, remaining turns).
-Reading pcb.program_id or pcb.kv_request_id is forbidden; per-program
-tables inside the policy are forbidden (aggregate statistics such as
-a running mean of gaps by tool name are allowed).
-
-Fitness: mean program JCT of the stock configuration (LRU cache, FCFS)
-divided by mean program JCT under this candidate, on a saturated cell
-and then a second arrival rate; the score is the mean over the cells
-run so far, the minimum is reported alongside, and vs_seed reports the
-same ratio against this seed. Higher is better.
-"""
-
-# Copy of evolve/champion_joint_41008503.py (the search's joint champion, the
-# 2026-09-15 board's "gate" point) promoted to a named policy: `--retention
-# gate --scheduling gate` runs it through the same flag path as the published
-# values instead of a staged candidate file. The original stays in evolve/ as
-# the record of the run; only these two imports differ (the harness shim
-# resolves to these same classes).
 from .base import RetentionPolicy, SchedulingPolicy
 
 
@@ -156,12 +82,11 @@ class EvolvedScheduling(SchedulingPolicy):
         # let it try: it's cheap to admit and doesn't need eviction.
         if pcb.kv_protected:
             return True
-        # Otherwise, only hold it back when the pool is tight and this
-        # turn's prompt plainly cannot fit even after every evictable
-        # block is freed: admitting it now would just force a
-        # preemption that fails to make room, or evicts other
-        # programs' KV for nothing. Let it wait one tick so turns that
-        # do fit can proceed; free space grows as running turns finish.
+        # Otherwise, only hold it back when the pool is tight and this turn's prompt
+        # plainly cannot fit even after every evictable block is freed: admitting it now
+        # would just force a preemption that fails to make room, or evicts other
+        # programs' KV for nothing. Let it wait one tick so turns that do fit can
+        # proceed; free space grows as running turns finish.
         util = view.kv_utilization
         if util is not None and util > 0.9:
             free = view.kv_free_tokens or 0

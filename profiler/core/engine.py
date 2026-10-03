@@ -296,23 +296,8 @@ def probe_limits(llm: LLM) -> RuntimeLimits:
 
 
 def spin_down(llm: LLM, tmpdir: Path | None = None) -> None:
-    """Release GPU memory held by the engine and clean the temp
-    config directory created by ``spin_up``.
-
-    vLLM v1 runs an ``EngineCore`` in a subprocess that holds GPU
-    memory independently of the host-side ``LLM`` object. ``del llm``
-    alone doesn't guarantee the subprocess is reaped in time for the
-    next ``spin_up`` to see the GPU clean — which is how a TP=2 boot
-    right after a TP=1 finish hits "Free memory … less than desired
-    GPU memory utilization".
-
-    To reliably free memory between TP steps we:
-      1. Try every shutdown / close hook on engine_core and
-         llm_engine (names have shifted between vLLM versions).
-      2. Tear down the distributed state (model parallel + nccl).
-      3. Drop references, gc, ``torch.cuda.empty_cache``.
-      4. Remove the spin_up tmpdir.
-    """
+    """Release GPU memory held by the engine and clean the temp config directory
+    created by ``spin_up``."""
     # 1. Best-effort shutdown of the engine-core subprocess.
     try:
         engine = getattr(llm, "llm_engine", None)

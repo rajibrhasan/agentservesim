@@ -1,35 +1,4 @@
-"""Program state, owned in one place.
 
-The engine's other planes -- `program_kv`, `program_scheduler`, `program_router`
--- read program state from here and keep no copy of their own. That single rule
-is the reason this module exists: the previous design had the harness own a
-program table while the engine owned request state, and every divergence found
-in September 2026 was a failure to reconcile the two, not a modelling error.
-
-What lives here is the cross-turn record of a program: who it is, where it is in
-its turn sequence, what service it has accrued, what its tool gaps have looked
-like, which instance holds its context, how much KV it is charged for, and what
-pins it holds.
-
-What deliberately does NOT live here is instance state -- queue depth, in-flight
-count, free blocks. That belongs to no single program, and letting it in turns
-the record into a global scratchpad. A policy that needs it takes an explicit
-probe.
-
-The admissibility rule for anything proposed for this record:
-
-    past-derived aggregates are admissible, future information is not.
-
-A deployed system can observe its own tool-gap history, so the running mean
-belongs here. It cannot observe this turn's output length or this gap's true
-duration, so those never appear -- a policy that could read them would be
-unimplementable on real hardware and every number measured with it meaningless.
-
-This module owns state only. It does not decide anything: no eviction, no
-ordering, no placement. Those are the planes' business, and the policies'.
-It also does not know the policy contract -- the adapter projects a snapshot
-onto whatever the contract wants, which keeps the engine independent of it.
-"""
 from __future__ import annotations
 
 import enum
@@ -44,27 +13,7 @@ _ANY = object()
 
 
 class Attribution(enum.Enum):
-    """How a block shared by several programs is charged.
-
-    A prefix-cache node covering N programs has one length and N owners, so a
-    program's footprint is undefined until this is chosen. It is not a
-    bookkeeping detail: a retention policy asked "how much is this program
-    holding" gets materially different answers, most sharply for programs
-    sharing a long system prompt -- which in an agent workload is all of them.
-
-    FULL       charge the whole node to every owner. Sums exceed the pool; this
-               is what the eviction trace does, correct for a diagnostic and
-               unusable as an accounting basis.
-    SPLIT      charge len/N to each owner. Sums to the pool, but a program's
-               footprint moves when an unrelated program arrives or leaves.
-    HOLDER     charge the whole node to the pin holder, nothing to the rest.
-               Stable per program; unpinned sharers look free while genuinely
-               depending on those blocks.
-
-    Whichever is chosen becomes part of the contract's observable semantics: a
-    retention policy is only reproducible across hosts if both charge shared
-    prefixes the same way.
-    """
+    """How a block shared by several programs is charged."""
 
     FULL = "full"
     SPLIT = "split"
@@ -73,18 +22,7 @@ class Attribution(enum.Enum):
 
 @dataclass(frozen=True)
 class PlannedTurn:
-    """A turn the trace says will happen, before it is scheduled.
-
-    `output_toks` is CUMULATIVE -- input plus generated -- because that is what
-    the engine compares its computed-token counter against. The old loader
-    applies `input_toks + output_toks` at ingestion (router.py:193); doing it
-    anywhere else produces a completion rule that is wrong by the length of the
-    prompt.
-
-    `gap_ns` is how long the tool call after this turn takes. It is trace input,
-    not something a policy may read: a PCB never carries this gap's true
-    duration, because a deployed system cannot know it in advance.
-    """
+    """A turn the trace says will happen, before it is scheduled."""
 
     node_id: object
     input_toks: int
@@ -177,16 +115,7 @@ class ProgramState:
         return self._ready_with(turn, dict(self.completions))
 
     def _ready_with(self, turn: "PlannedTurn", done) -> Optional[float]:
-        """`ready_ts` against a completions map the caller already built.
-
-        `completions` is a tuple, so `dict(...)` is O(turns completed) and
-        `ready_ts` paid it on EVERY call -- once per pending turn, per program,
-        per step. On the board cell that was 418,837,913 calls and 654 s of a
-        5,768 s run: eleven percent of the whole simulation spent rebuilding
-        the same dictionary. The request planes have no orchestrator and pay
-        none of it, which is most of why they finished the same cell in forty
-        minutes against seventy.
-        """
+        """`ready_ts` against a completions map the caller already built."""
         if not turn.parents:
             return self.arrival_ts
         best = None
@@ -232,15 +161,7 @@ class ProgramState:
 
 
 class ProgramOrchestrator:
-    """The single owner of program state for one cluster.
-
-    Cluster-scoped, not instance-scoped: a program is one entity even when its
-    turns could be placed anywhere. The KV plane is per-instance, which is why
-    this class enforces the invariant that a program's *live* context sits on
-    exactly one instance at a time -- see `place`. Under that invariant a
-    footprint is a scalar rather than a vector over instances, and blocks left
-    behind on a previous instance are ordinary cache entries with no live owner.
-    """
+    """The single owner of program state for one cluster."""
 
     def __init__(self, attribution: Attribution = Attribution.SPLIT) -> None:
         self._programs: Dict[str, ProgramState] = {}
@@ -337,17 +258,7 @@ class ProgramOrchestrator:
         ))
 
     def on_turn_scheduled(self, program_id: str, now: float) -> ProgramState:
-        """The turn has joined the running batch.
-
-        One defined moment, which is the point: "admitted" used to be a site you
-        configured rather than an event that happened. The EVENT is what matters
-        -- a queue-persistent retention policy releases here rather than at
-        arrival, and the difference is the whole queue wait. Nothing is recorded
-        on the program: whether a turn is running is the scheduler's `running`
-        list, and a copy of it here would be a second record of one fact,
-        updated by different code, which is the arrangement these planes exist
-        to remove.
-        """
+        """The turn has joined the running batch."""
         p = self._programs[program_id]
         return self._put(p)          # nothing on the record changes
 
@@ -355,17 +266,7 @@ class ProgramOrchestrator:
                          tool_name: Optional[str] = None,
                          has_more_turns: Optional[bool] = None,
                          node_id: object = None) -> ProgramState:
-        """The turn's last token has been emitted.
-
-        `service_s` is the compute this turn actually consumed; it accrues so a
-        scheduling policy can rank by attained service without keeping its own
-        accumulator.
-
-        No gap duration is reported here: how long the following tool call takes
-        is a property of the EDGE to the next turn, recorded when the trace was
-        loaded. Completion only says which node finished and when; readiness is
-        derived. Two ways to express one delay is how they drift apart.
-        """
+        """The turn's last token has been emitted."""
         p = self._programs[program_id]
         # Whether more turns follow is a fact about the program, not something
         # the caller should have to assert: the trace already said.
@@ -432,24 +333,7 @@ class ProgramOrchestrator:
 
     def generated_ids(self, program_id: str, node_id: object,
                       count: int) -> Tuple[int, ...]:
-        """The real token ids this turn will GENERATE, or () if not knowable.
-
-        A turn's output is not invented text: the next turn's prompt is this
-        turn's prompt, plus what this turn generated, plus the tool result. So
-        the ids live in the successor's `input_hash_ids`, at exactly the offset
-        where this turn's prompt ends.
-
-        Without this the plane numbers generated tokens in a private range, and
-        they become blocks nothing can ever match -- while still occupying the
-        pool, and still refreshing their LRU stamp on every decode step. Active
-        requests' unmatchable decode blocks then outrank a waiting program's
-        matchable context, and the LRU takes the context instead: whole
-        programs losing their prefix and re-prefilling from 48 tokens.
-
-        Real vLLM has no such class of block. Every block it caches is hashed
-        from real token ids and is matchable by whoever presents them, which for
-        an agent's next turn is exactly this program.
-        """
+        """The real token ids this turn will GENERATE, or () if not knowable."""
         if count <= 0:
             return ()
         from .router import _DERIVE_FROM_SUCCESSOR, _SYNTH_ID_BASE
@@ -568,16 +452,7 @@ class ProgramOrchestrator:
     # ------------------------------------------------------- KV residency
 
     def place(self, program_id: str, instance: int) -> ProgramState:
-        """Record where this program's live context is.
-
-        Enforces the invariant the KV plane depends on: live context sits on
-        exactly one instance. Moving a program does not move its blocks, so the
-        previous instance keeps unreferenced copies -- those are ordinary cache
-        entries with no live owner and are charged to nobody. What must not
-        happen silently is a program being considered live in two places at
-        once, because then its footprint is a vector and every per-instance
-        pressure decision about it is ill-posed.
-        """
+        """Record where this program's live context is."""
         p = self._programs[program_id]
         if p.live_instance is not None and p.live_instance != instance:
             # the old residency is stale from this moment, not shared

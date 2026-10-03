@@ -1,31 +1,4 @@
-"""Layerwise profiler for LLMServingSim.
-
-Drives a real vLLM engine with synthetic batches to capture per-layer
-CUDA kernel latency. The output (one folder per hardware/model/variant,
-subfolders per TP degree) is consumed directly by LLMServingSim's
-trace_generator at simulation time.
-
-Module map:
-    __main__.py                 CLI dispatch (profile / slice)
-    core/                       profiler internals
-        runner.py               full-run orchestration
-        config.py               Architecture loader + ProfileArgs + engine defaults
-        engine.py               vLLM engine lifecycle
-        categories.py           profile categories (dense / per_seq / attn / moe)
-        skew.py / fit_alpha.py  heterogeneous-decode skew sweep + fit
-        writer.py               CSV output + meta.yaml
-        logger.py               rich-based logging & progress UI
-        hooks/                  vLLM-internal-API touchpoints
-            extension.py        vLLM worker extension class
-            batch.py            synthetic SchedulerOutput assembly
-            timings.py          layerwise_profile tree extraction
-            moe_hook.py         FusedMoE forced-routing patcher
-    models/                     architecture yamls (one per HF model_type)
-    power/                      nvidia-smi / IPMI power-logging shell helpers
-    perf/                       profile output root (per hardware/model/variant)
-    profile.sh                  editable user-run script
-    profile-all.sh              multi-model sweep helper
-"""
+"""Layerwise profiler for LLMServingSim."""
 
 # ---------------------------------------------------------------------------
 # _typeshed shim — runs FIRST, before anything else imports.

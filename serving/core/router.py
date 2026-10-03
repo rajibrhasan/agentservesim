@@ -17,42 +17,7 @@ _DERIVE_FROM_SUCCESSOR = os.environ.get("SIM_DERIVE_OUTPUT_IDS", "0") != "0"
 
 
 def derive_output_ids(cur, nxt, n_out, salt):
-    """Token ids for the `n_out` tokens this request will generate.
-
-    KV for generated tokens must be charged whether or not the workload file
-    supplied their ids. The radix key is `input_hash_ids + output_hash_ids`
-    sliced to the computed length, so an empty second list silently caps a
-    request's cached footprint at its PROMPT, and every generated block is
-    free. On workloads/standard/swebench50 that is 269,200 output tokens
-    across 2,873 turns charged to nothing, which understates pressure and
-    admits work the real engine could not.
-
-    Three sources, in order:
-
-      1. The trace's own `output_tok_ids`, when it has them.
-      2. Synthetic ids unique to the request. They occupy blocks and are
-         matchable by nobody, which is what the reference actually does.
-      3. The successor turn's prompt, only under SIM_DERIVE_OUTPUT_IDS=1.
-
-    On (2) vs (3). A turn's output really is in the next prompt -- in a live
-    deployment the agent's own text is what it sends on, which is why
-    `program_orchestrator.generated_ids` derives them. But the thing we
-    validate against is a REPLAY: it fixes the output LENGTH and lets vLLM
-    generate whatever it likes, while the next prompt is replayed from the
-    trace. Those tokens do not match, so the real engine gets no cross-turn
-    reuse of generated content, and measuring its own requests.jsonl over
-    2,823 turns of rtx6000_70b_swebench_gate__jps0.02_engine_pinrel/stock
-    says so plainly: cached_tokens tracks the previous turn's PROMPT in 38.3%
-    of turns (block-floored: 1,344 against a 1,350-token prompt) and prompt +
-    generated in 2.6%.
-
-    So deriving would hand the simulator hits its reference mostly does not
-    get. Not none: 2.6% of turns do land on the prompt-plus-generated
-    boundary, so this measures a strong tendency rather than a proof of zero
-    reuse -- synthetic is the conservative approximation, not an exact model. SIM_DERIVE_OUTPUT_IDS=1 restores
-    derivation for modelling a deployment, where the reuse is real -- but a
-    run with it on must not be compared against a replay.
-    """
+   
     if cur.get("output_tok_ids"):
         return list(cur["output_tok_ids"])
     if n_out <= 0:

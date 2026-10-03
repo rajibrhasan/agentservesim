@@ -1,9 +1,4 @@
-"""Synchronous Autellix integration with vLLM v0.19's real scheduler.
 
-The small EngineCore patch calls schedule()/complete() at actual execution
-boundaries. Native vLLM still builds batches, updates token IDs, and reports
-outputs; this adapter controls selection and physical CPU swap ownership.
-"""
 from collections import Counter, deque
 from contextlib import contextmanager
 from dataclasses import dataclass

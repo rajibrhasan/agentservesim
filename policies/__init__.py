@@ -1,26 +1,6 @@
-"""Serving policies, one module per published system.
+"""Policy registry and shared resolution helpers for simulator and replay.
 
-    base.py        KVPolicy | SchedulingPolicy | RoutingPolicy + the records
-    executors.py   the machinery that applies a decision and logs it
-    stock.py       vLLM v1 as shipped
-    continuum.py   ContinuumKV + ContinuumScheduling
-    saga.py        SagaKV + SagaRouting
-    autellix.py    AutellixScheduling
-    infercept.py   InferceptKV
-    gate.py        the evolved joint champion (copy of evolve/champion_joint_41008503.py), named
-    generic.py     primitives that are not papers (plain TTL, program FCFS)
-
-The files used to be cut by AXIS, so one paper's policy was assembled from
-pieces in two or three of them under names that did not say which paper they
-came from. It cost something real: SAGA's affinity rule sat in `routing.py`
-unassociated with SAGA, and the arena recorded its absence as a missing
-feature. It was not missing, it was unlabelled.
-
-`PAPERS` is the mapping the CLI reads. `VALUES` keeps the axis flag strings
-working -- `--retention continuum` must still resolve to the same class,
-because the 24-leg answer key was recorded under those strings and
-`evaluation/drift.py` checks every spec against the reference meta.json.
-"""
+Policies are selected independently for KV retention, scheduling, and routing."""
 from . import autellix, base, continuum, executors, generic, infercept, stock
 from . import utils
 from .base import (                                              # noqa: F401

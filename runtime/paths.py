@@ -1,10 +1,4 @@
-"""Where the simulator, its container, and its scratch space live.
 
-Split out of evolve/simrun.py on 2026-09-12. These are properties of the
-deployment, not of any particular caller, and both the policy search and the
-arena runner need them -- the arena cannot import `evolve` without dragging
-OpenEvolve into a benchmark that is supposed to run with no simulator present.
-"""
 
 import getpass
 import os
@@ -25,16 +19,9 @@ AS_ROOT = REPO
 #: simulator is never run from the host interpreter: ASTRA-Sim is a compiled
 #: backend and the image is what pins it.
 def _site(name, default):
-    """A deployment-specific path, without putting anyone's username in the
-    source. Resolution order: environment, then an OPTIONAL and gitignored
-    `runtime/site.py`, then a sibling of the repository.
-
-    The scratch root holds the container image, the python dependencies and the
-    big trace sets -- all of it site-specific and none of it publishable. It
-    used to be a literal `/orange/<group>/<user>/...` in this file and in three
-    others, which made the repo unrunnable by anyone else and leaked an account
-    name into every clone.
-    """
+    """A deployment-specific path, without putting anyone's username in the source.
+    Resolution order: environment, then an OPTIONAL and gitignored
+    `runtime/site.py`, then a sibling of the repository."""
     env = os.environ.get("EVOLVE_" + name)
     if env:
         return env

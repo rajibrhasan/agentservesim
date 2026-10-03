@@ -1,9 +1,4 @@
-"""Service safe control messages on the engine thread during worker execution.
 
-The response reader only resolves the executor future. All scheduler and KV
-operations stay on the engine owner thread. Never overtake an ADD, ABORT, or
-unrecognized utility: its ordering may be required by a later retention call.
-"""
 from concurrent.futures import ThreadPoolExecutor, wait
 from queue import Empty
 

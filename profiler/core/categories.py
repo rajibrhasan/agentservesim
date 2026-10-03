@@ -1,22 +1,4 @@
-"""Profile categories.
-
-Each category knows three things:
-  1. How to generate the list of Shots that make up its sweep
-     (``compose_shots``).
-  2. How to convert the raw per-layer timings returned by the worker
-     into CSV-bound Points (``extract_points``).
-  3. Which slice of the ModelSpec's catalog it cares about
-     (``catalog_slice``).
-
-Four concrete categories:
-    DenseCategory       token-parameterized layers (embedding, qkv_proj, ...)
-    SequenceCategory    sequence-parameterized layers (lm_head, sampler)
-    AttentionCategory   the unified prefill+decode+mixed attention grid
-    ExpertCategory      MoE block (tokens × activated_experts)
-
-Adding a new profile kind is a matter of subclassing ``Category`` and
-registering it in ``categories_for()``.
-"""
+"""Profile categories."""
 
 from __future__ import annotations
 
@@ -324,16 +306,13 @@ class AttentionCategory(Category):
         n_dec_vals = _geometric_grid(
             limits.max_num_seqs, _ATTN_N_DECODE_START,
         )
-        # The KV axis must top out strictly BELOW max_model_len, never
-        # on it. A shot at kv == max_model_len is infeasible for both
-        # shapes and gets dropped by filter 3 below: a prefill occupies
-        # ``chunk + kv + 1`` positions and a decode occupies ``kv + 2``.
-        # Capping at max_model_len therefore produced a top grid point
-        # that never ran, so the table ended one doubling lower (65536
-        # under a 131072 limit) and every longer context was priced by
-        # extrapolating the last two measured points. Reserving room for
-        # the smallest prefill chunk keeps the top point legal for both
-        # shapes, so the longest contexts are measured.
+        # The KV axis must top out strictly BELOW max_model_len, never on it. A shot at
+        # kv == max_model_len is infeasible for both shapes and gets dropped by filter 3
+        # below: a prefill occupies ``chunk + kv + 1`` positions and a decode occupies
+        # ``kv + 2``. Capping at max_model_len therefore produced a top grid point that
+        # never ran, so the table ended one doubling lower (65536 under a 131072 limit)
+        # and every longer context was priced by extrapolating the last two measured
+        # points.
         feasible_kv = max(0, limits.max_model_len - _ATTN_CHUNK_START - 1)
         kv_cap = min(args.attention_max_kv, feasible_kv)
         kv_vals = _geometric_grid(
@@ -350,12 +329,10 @@ class AttentionCategory(Category):
                     for kv_d in kv_vals:
                         if n_dec == 0 and kv_d != 0:
                             continue
-                        # A "decode" step by definition has prior
-                        # history in the KV cache. (q=1, history=0)
-                        # is a 1-token prefill in disguise — not a
-                        # shape vLLM's scheduler ever produces, so
-                        # profiling it wastes shots on a degenerate
-                        # attention case.
+                        # A "decode" step by definition has prior history in the KV
+                        # cache. (q=1, history=0) is a 1-token prefill in disguise — not
+                        # a shape vLLM's scheduler ever produces, so profiling it wastes
+                        # shots on a degenerate attention case.
                         if n_dec > 0 and kv_d == 0:
                             continue
                         # Empty batch — skip entirely.

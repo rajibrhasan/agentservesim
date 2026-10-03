@@ -1,10 +1,4 @@
-"""Opt-in vLLM v0.19 scheduler observations for policy execution.
 
-Loaded through scheduler_cls, without modifying the installed vLLM checkout.
-Both sync and async scheduler implementations retain their native scheduling
-behavior. This module exposes observations; it does not enable Autellix's
-step planner or implement a CPU transfer worker.
-"""
 import time
 
 

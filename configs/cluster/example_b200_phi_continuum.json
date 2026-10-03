@@ -1,0 +1,46 @@
+{
+  "num_nodes": 1,
+  "link_bw": 538.8,
+  "link_latency": 0,
+  "nodes": [
+    {
+      "num_instances": 1,
+      "cpu_mem": {
+        "mem_size": 512.0,
+        "mem_bw": 256.0,
+        "mem_latency": 0
+      },
+      "instances": [
+        {
+          "model_name": "microsoft/Phi-3.5-MoE-instruct",
+          "hardware": "B200",
+          "npu_mem": {
+            "mem_size": 162.0,
+            "mem_bw": 8000.0,
+            "mem_latency": 0
+          },
+          "num_npus": 1,
+          "tp_size": 1,
+          "ep_size": 1,
+          "pd_type": null,
+          "pp_size": 1,
+          "kv_pool_tokens": 657040
+        }
+      ]
+    }
+  ],
+  "network": {
+    "topology": [
+      "Ring"
+    ],
+    "npus_count": [
+      1
+    ],
+    "bandwidth": [
+      538.8
+    ],
+    "latency": [
+      0
+    ]
+  }
+}

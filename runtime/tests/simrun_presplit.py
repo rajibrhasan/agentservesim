@@ -1,12 +1,5 @@
-"""Simulator driver for the policy search: stage a candidate into a
-scratch copy of the harness, run one trace cell, return the scorecard.
-
-Everything the evaluator and the grid runner need to run the simulator
-lives here so the two use byte-identical invocations. The simulator
-itself is untouched; the candidate reaches it through ``--harness-root``
-(a scratch directory holding harness/ plus evolved_retention.py) and
-``--retention evolved``.
-"""
+"""Simulator driver for the policy search: stage a candidate into a scratch copy of
+the harness, run one trace cell, return the scorecard."""
 
 import ast
 import csv

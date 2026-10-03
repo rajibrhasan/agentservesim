@@ -1,10 +1,4 @@
-"""SAGA workflow decisions from explicit, online-visible observations.
 
-Equations 1--9 and section 5.2 of arXiv:2605.00528v2. These decisions do
-not move KV themselves: a coordinator must commit placement only after the
-destination acknowledges the transfer. No future replay output or tool
-duration is an input. Native execution integration is tracked separately.
-"""
 from dataclasses import dataclass
 import math
 import random
@@ -42,12 +36,7 @@ class CacheObservation:
 
 
 def eviction_order(entries, now, max_observed_idle_s):
-    """Rank reclaimable session entries, highest eviction score first.
 
-    Caller filters ownership: referenced/in-flight blocks are never candidates.
-    Unknown workflows should use the documented request-level fallback rather
-    than inventing successor probabilities. A terminal node has no successors.
-    """
     _nonnegative(now, 'time')
     _nonnegative(max_observed_idle_s, 'maximum observed idle time')
     entries = tuple(entries)
@@ -80,12 +69,7 @@ class TaskEstimate:
 
 
 def fair_shares(tasks, now, overdue_slack_s):
-    """Normalize tenant AFS scores into shares (equations 8 and 9).
-
-    Deadline-past behavior is unspecified by the paper. The caller must choose
-    a positive minimum slack explicitly; it is recorded as a port parameter.
-    Tasks include tool-blocked programs, whose future GPU work remains pending.
-    """
+  
     _nonnegative(now, 'time')
     if not math.isfinite(overdue_slack_s) or overdue_slack_s <= 0:
         raise ValueError('overdue slack must be positive and finite')
@@ -125,13 +109,7 @@ class Steal:
 
 
 class SagaPlacement:
-    """Observed-cache affinity plus guarded, acknowledged work stealing.
-
-    The initial trigger sentence in section 5.2 says OR; its anti-thrashing
-    paragraph requires both an empty queue and load excess. Use that stricter
-    rule, with a 100 ms idle window and 2x load ratio. Load must be supplied by
-    the same measured utilization definition for all workers.
-    """
+ 
 
     def __init__(self, seed=0, affinity_limit=0.8, idle_s=0.1, load_ratio=2.0):
         if not 0 < affinity_limit <= 1 or idle_s < 0 or not math.isfinite(idle_s):

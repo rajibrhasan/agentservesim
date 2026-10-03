@@ -1,11 +1,3 @@
-"""Batch-boundary Autellix scheduling decisions, independent of engine storage.
-
-Implements the queues, service inheritance, demotion and starvation rule of
-Algorithm 1 in arXiv:2502.13965. This is a decision runtime, not a replacement
-for the GPU scheduler or a claim that swapping/routing is implemented.
-Engine adapters must report actual execution intervals and execute the plan.
-All clocks and queue thresholds are in seconds; parameters are explicit.
-"""
 from __future__ import annotations
 
 from bisect import bisect_right

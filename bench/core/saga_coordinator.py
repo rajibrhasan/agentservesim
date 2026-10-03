@@ -1,10 +1,4 @@
-"""Queued SAGA successor migration using the native KV transfer protocol.
 
-The gateway owns these pending calls until take() hands them to an engine.
-This excludes active generations from stealing and prevents a source engine
-from scheduling a call while its placement is changing. Workflow/TTL metadata
-is carried unchanged; the execution adapter must enforce it at destination.
-"""
 from dataclasses import dataclass, field
 
 from policies.saga_runtime import SagaPlacement, WorkerObservation

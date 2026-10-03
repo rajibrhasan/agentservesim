@@ -1,20 +1,4 @@
-"""The contract: three bases, one per decision plane, and the records they read.
-
-Named after the plane each one talks to, so the correspondence is visible
-rather than remembered:
-
-    KVPolicy         -> program_kv          what is kept, pinned, evicted, offloaded
-    SchedulingPolicy -> program_scheduler   what order, what is admitted, who is preempted
-    RoutingPolicy    -> program_router      where a program's next turn runs
-
-A published policy subclasses one, two or three of these and lives in its own
-module. Whatever it leaves out keeps the engine's own rule, which is what makes
-"same engine, one knob turned" a true statement about a run.
-
-Nothing here decides anything. Every concrete policy is elsewhere, because a
-base file that also holds five implementations is how a paper's halves end up
-in different files from each other.
-"""
+"""The contract: three bases, one per decision plane, and the records they read."""
 from __future__ import annotations
 
 import json
@@ -90,12 +74,11 @@ class RetentionPolicy(_Configurable):
     engine_flags: dict = {"enable_prefix_caching": True, "kv_protection": True}
     # Latest system signals (set by the executor before each decision).
     signals: SystemSignals = SystemSignals()
-    # When the protection release fires: "arrival" (gap-scoped: released
-    # the moment the program's next turn arrives, exposing the context to
-    # LRU for the whole queue wait) or "scheduled" (queue-persistent: held
-    # until the next turn is actually admitted to the running batch, the
-    # semantics of Continuum's released code). The host (real driver or
-    # simulator adapter) reads this and routes the release event.
+    # When the protection release fires: "arrival" (gap-scoped: released the moment the
+    # program's next turn arrives, exposing the context to LRU for the whole queue wait)
+    # or "scheduled" (queue-persistent: held until the next turn is actually admitted to
+    # the running batch, the semantics of Continuum's released code). The host (real
+    # driver or simulator adapter) reads this and routes the release event.
     release_event: str = "arrival"
 
     def observe_arrival(self, pcb: ProgramControlBlock, now: float) -> None:
@@ -111,15 +94,9 @@ class RetentionPolicy(_Configurable):
         request_id: str,
         now: float,
     ) -> Optional[tuple]:
-        """Return (action, deadline_ts) or (action, deadline_ts, info)
-        or None for no action. info is a JSON-serializable dict of the
-        decision's inputs/scores, logged for parity replay.
-
-        The gap the program is entering is described by the record
-        (pcb.tool_name, pcb.context_tokens). Its DURATION is not, and
-        must not be: that is trace knowledge, which is why the
-        gap-dependent values below carry an explicit predictor.
-        """
+        """Return (action, deadline_ts) or (action, deadline_ts, info) or None for no
+        action. info is a JSON-serializable dict of the decision's inputs/scores,
+        logged for parity replay."""
         return None
 
     def on_turn_arrival(
@@ -174,16 +151,7 @@ class VictimView:
 
 
 class SchedulingPolicy(_Configurable):
-    """Priority for one turn at submission; None means do not stamp.
-
-    Two further hooks widen the policy from a queue key to the engine's
-    other two scheduling decisions. Both default to the engine's own
-    rule, so a policy that only overrides priority() behaves exactly as
-    before. Deployability differs: admit() is a gateway-side decision
-    (hold the submission) and runs on a stock engine; victim() replaces
-    the engine's preemption rule and needs the engine patch the released
-    Continuum / SAGA forks also carry.
-    """
+    """Priority for one turn at submission; None means do not stamp."""
 
     # Engine-launch configuration this value requires.
     engine_args: dict = {}

@@ -1,73 +1,9 @@
-"""Fit a per-bucket alpha from ``skew.csv``.
+"""Fit per-bucket skew correction from measured attention timings.
 
-The skew case measures three latencies at the same operating point:
-
-    t_mean   all decodes uniform at the mean kv
-    t_max    all decodes uniform at the max kv
-    t_skew   the actual skewed batch (nb at kv_big, n-nb at kv_small)
-
-The simulator uses alpha at lookup time via
-
-    t_predicted = t_mean + alpha * (t_max - t_mean)
-
-Empirically (on the widened Qwen3-32B / RTXPRO6000 sweep with ~13k
-samples per TP) per-batch alpha has a real 5-axis structure:
-``pc`` (prefill chunk), ``n`` (total decodes), ``skew_rate``
-(normalised heavy-fraction in the batch), ``kv_big`` (the per-batch
-max decode kv), and ``kp`` (prefill history length). The axes capture,
-respectively, the compute-shape regime (pc, n), how the skew is
-distributed (skew_rate), how much the outlier decode stretches the
-kernel's tile padding / SM-imbalance behaviour (kv_big), and the
-interaction between pre-loaded prefill KV and the decode-skew term
-(kp).
-
-Axis ablation (5-fold CV on the widened data, test p50 / p90 / p99 /
-mean-signed-error):
-
-    TP=1:
-        α = 0                        4.1 / 17.9 / 35.7 / -0.062   (old)
-        global constant              3.9 / 19.2 / 34.4 / -0.008
-        per-(pc, n_bin)              3.5 / 16.4 / 39.9 / +0.013
-        per-(pc, n_bin, kv_big_bin)  2.9 / 16.1 / 49.2 / +0.005   (4-axis)
-        per-(pc, n_bin, kv_big_bin,
-             skew_rate_bin, kp_bin)  2.7 / 14.8 / 44.1 / +0.003   ← chosen (5-axis)
-
-Within a bucket the fitted constant is the weighted-LS optimum:
-
-    alpha_hat(bin) = argmin_a sum_{i in bin} (a*dtm_i - dts_i)^2
-                   = sum(dtm*dts) / sum(dtm^2)
-
-which naturally down-weights noise-dominated points (small dtm) and
-up-weights signal-bearing ones.
-
-A pooled constant (``alpha_default``) is the fallback for buckets
-outside the fitted table.
-
----------------------------------------------------------------------
-Data-driven bucket axes
----------------------------------------------------------------------
-The bin edges for ``n``, ``kv_big``, and ``kp`` are derived from the
-skew.csv actually present on disk, not hard-coded. This means:
-
-    * ``n`` gets one bucket per unique profiled value (plus an
-      overflow ``n>{max}`` for runtime batches beyond the sweep).
-    * ``kp`` gets one bucket per unique profiled value, starting from
-      the ``kp=0`` sentinel.
-    * ``kv_big`` uses a log-4x doubling scheme extended to the
-      observed maximum, since ``kv_big = kvs * skew`` varies
-      continuously and one-bin-per-value would fragment too finely.
-
-``skew_rate`` remains fixed (it's a normalised [0, 1] metric — its
-bucket boundaries are a judgment call about how to slice the
-distribution, not a range-coverage question). ``pc`` is not bucketed
-at all: every profiled grid point becomes its own alpha column.
-
-The derived axes are written to ``meta.yaml::skew_fit.bucket_axes``
-and the simulator reads them from there, so widening the profile
-sweep (e.g. ``max_num_seqs`` to 512 or ``attention_max_kv`` to 65536)
-lights up proper resolution on the affected axis without any code
-change in either component.
-"""
+Prediction: t_mean + alpha * (t_max - t_mean), with alpha in [0, 1].
+Weighted least squares fits buckets keyed by prefill chunk, decode count,
+normalized skew rate, maximum decode KV length, and prefill history length.
+Bucket definitions and fit quality are recorded alongside the profile."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -169,15 +105,7 @@ def _derive_kp_axis(df: pd.DataFrame) -> tuple[tuple, tuple]:
 
 
 def _derive_kv_big_axis(df: pd.DataFrame) -> tuple[tuple, tuple]:
-    """Log-4x doublings from 1024 up to the observed max.
-
-    ``kv_big = kvs * skew`` takes many distinct values (roughly
-    cartesian-product over the kvs and skew grids), so a per-value
-    scheme would fragment into dozens of cells with insufficient
-    samples each. Log-4x (1k, 4k, 16k, 64k, …) keeps the cell count
-    manageable while adapting the ceiling to whatever the profile
-    actually covered.
-    """
+    """Log-4x doublings from 1024 up to the observed max."""
     if "kv_big" not in df.columns or df["kv_big"].dropna().empty:
         return _DEFAULT_KV_BIG_BINS, _DEFAULT_KV_BIG_LABELS
     kv_max = int(df["kv_big"].dropna().max())
@@ -224,14 +152,7 @@ def _derive_bucket_axes(df: pd.DataFrame) -> dict[str, Any]:
 
 def _bucket_key(axes: Mapping[str, Any], pc, n, skew_rate, kv_big, kp) -> str:
     """Stringified 5-axis key used in the per-TP skew_fit CSV. Format is
-    ``pc={pc}|{n_label}|{skew_rate_label}|{kv_big_label}|{kp_label}``.
-
-    ``axes`` is any mapping that carries the ``*_bins`` / ``*_labels``
-    tuples. At fit time these come from ``_derive_bucket_axes``; at
-    simulator lookup time they come from
-    ``meta.yaml::skew_fit.bucket_axes``; both places agree on the
-    label strings so the CSV rows resolve cleanly either way.
-    """
+    ``pc={pc}|{n_label}|{skew_rate_label}|{kv_big_label}|{kp_label}``."""
     n_label = _bucket_label(
         tuple(axes["n_bins"]), tuple(axes["n_labels"]), int(n),
     )
@@ -384,16 +305,7 @@ def lookup_alpha(
     kv_big: int,
     kp: int,
 ) -> float:
-    """Resolve alpha for a specific batch from a ``skew_fit`` block.
-
-    Uses ``bucket_axes`` from the fit_block when present (preferred,
-    since the profiler stores the axes it actually used); falls back
-    to the module-level defaults otherwise. Runtime batches with zero
-    skew (``kv_max == kv_min``) should short-circuit before calling
-    this — a ``skew_rate`` of NaN / inf will still produce a valid key
-    (snapped to the edge bin) but no skew correction should be applied
-    in that case.
-    """
+    """Resolve alpha for a specific batch from a ``skew_fit`` block."""
     axes = fit_block.get("bucket_axes") or default_bucket_axes()
     per_tp = fit_block.get("per_tp", {})
     entry = per_tp.get(tp) or per_tp.get(int(tp))

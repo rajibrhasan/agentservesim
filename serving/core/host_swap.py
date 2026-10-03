@@ -1,10 +1,4 @@
-"""Causal, bounded host copies for the radix-cache simulator.
 
-This is deliberately separate from native InferCept residency. The radix
-index keeps a source chain until its copy completes; it cannot exchange
-individual occupied CPU/GPU pages using the native engine's scratch buffer.
-Transfers are serialized in the trace, not claimed to overlap computation.
-"""
 from dataclasses import dataclass
 import math
 
@@ -50,13 +44,7 @@ class MinWasteSwapPolicy:
 
 
 class PreemptSwapPolicy:
-    """Autellix's rule: the scheduler already decided to evict this call.
-
-    Its KV must reach the host or the call re-prefills, which is the outcome
-    swapping exists to avoid, so nothing here may drop a source. Candidates
-    go oldest first: the call that has been waiting to leave the GPU longest
-    is the one blocking the pool.
-    """
+   
 
     name = "preempt"
 
@@ -252,23 +240,6 @@ class HostSwap:
 
 
 class RestoreGate:
-    """FCFS whole-context restore admission for serialized host copies.
-
-    Without this the simulator restores whatever the scheduler happened to
-    admit, and charges the load afterwards: the budget bounds the total but
-    nothing decides *whose* restore goes first. The paper restores in arrival
-    order. This substrate restores whole prefixes, not native physical-page
-    chunks. An oversized head must run alone rather than wait forever for a
-    window that cannot grow. The trace charges its full transfer duration;
-    this is not a claim of native overlap or chunk-restore fidelity.
-
-    The budget is computed against the batch being assembled rather than the
-    last one that ran: walking the queue in order, the accumulated token count
-    *is* the upcoming forward pass, so a larger batch hides more restore. Using
-    the previous batch's size would grant an idle engine a window it has not
-    earned, which is the failure the store side already had to fix.
-    """
-
     def __init__(self, memory, profile, stats):
         self.memory = memory
         self.profile = profile

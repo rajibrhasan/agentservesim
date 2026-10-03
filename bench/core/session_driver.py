@@ -1,19 +1,4 @@
-"""Replay programs as streaming sessions for engines that act on paused requests.
 
-InferCept's controller decides about a request that is paused for a tool call,
-so a program must remain ONE engine request across its turns: turn i+1 arrives
-as a StreamingInput appended to the live request, not as a new request. The
-chain driver in runner.py submits one request per turn and never creates a
-pause, so no InferCept decision can fire under it.
-
-Turn boundaries are observed on the client: turn i is complete when its pinned
-output length has streamed back, its tool gap then elapses, and the next turn's
-tokens are appended. Timestamps use the event loop clock (time.monotonic()),
-the same clock as vLLM's RequestStateStats, so program JCT (arrival -> last
-token of the last turn) is comparable with the chain driver's. Engine-internal
-per-turn queued/scheduled stamps do not exist for a streaming request and are
-recorded as None; each record carries the client-side turn start instead.
-"""
 import asyncio
 import contextlib
 import math

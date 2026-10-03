@@ -1,23 +1,6 @@
 from __future__ import annotations
 
-"""
-Copyright 2023-2024 SGLang Team
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-"""
-
-"""
-The radix tree data structure for managing the KV cache.
-"""
 
 import threading
 import heapq
@@ -429,15 +412,7 @@ class RadixCache():
         return self._total_size_helper()
 
     def evict(self, num_tokens: int, key=None):
-        """Reclaim `num_tokens` from the leaves, least valuable first.
-
-        `key` replaces the eviction order. Without it the order is the
-        tree's own LRU (TreeNode.__lt__ on last_access_time), which is what
-        vLLM does. A policy that ranks reclaim candidates itself -- SAGA's
-        workflow-aware LRU is the one that does -- passes a callable
-        node -> sort key, smallest evicted first, and gets the identical
-        tail-splitting and event accounting rather than a second copy of it.
-        """
+        """Reclaim `num_tokens` from the leaves, least valuable first."""
         # print(f"[RADIX_EVICT] START num_tokens_to_evict={num_tokens} total_size={self.total_size()} evictable={self.evictable_size()}")
         nodes = self._collect_leaves()
         if key is None:
@@ -548,17 +523,10 @@ class RadixCache():
         return delta
 
     def dec_lock_ref_tail(self, node: TreeNode, num_tokens: int):
-        """Drop ONE lock reference from the tail of the chain ending at
-        `node`, covering at least `num_tokens` tokens (rounded up to
-        whole pages), splitting the last node at a page boundary when it
-        is longer than needed. The prefix of the chain stays locked.
-        Mirrors vLLM's block-granular reclaim of a parked context
-        (block_pool._reclaim_protected: tail blocks first, prefix stays
-        matchable). Returns (remaining_node, unlocked_tokens,
-        freed_tokens): remaining_node is the new tail of the still-locked
-        chain (root => nothing left), unlocked_tokens the tokens whose
-        reference was dropped, freed_tokens those that became evictable
-        (lock_ref reached 0)."""
+        """Drop ONE lock reference from the tail of the chain ending at `node`,
+        covering at least `num_tokens` tokens (rounded up to whole pages),
+        splitting the last node at a page boundary when it is longer than needed.
+        The prefix of the chain stays locked."""
         if node is None or node == self.root_node or num_tokens <= 0:
             return node, 0, 0
         ps = int(max(1, self.page_size))

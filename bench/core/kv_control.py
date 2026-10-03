@@ -1,16 +1,4 @@
-"""Transports to a LIVE vLLM engine's KV protection utilities.
 
-The engine (v0.19.0, branch agent-knobs) exposes kv_protect, kv_release,
-kv_evict and kv_protection_stats through the generic EngineCore dispatch. These
-two classes reach them -- in-process for an offline `LLM` object, over HTTP for
-the routes `bench/serve_agent.py` adds to a running server.
-
-Here rather than under `policies/` because a transport is not a policy: it
-decides nothing, and a package of published decision rules should not carry the
-code that opens a socket. The interface they implement lives with the policies
-(`policies/utils/kv_control.py`), because that is what the executors write
-against.
-"""
 import json
 import urllib.request
 from typing import Any, Optional

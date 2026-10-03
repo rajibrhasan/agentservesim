@@ -1,13 +1,4 @@
-"""Native request lifecycle and min-waste scheduler for InferCept.
 
-Streaming inputs represent tool results appended to a still-live request.
-vLLM's generic streaming-input path drops the final sampled token and resets
-arrival time; an intercepted agent must keep that token and its original FCFS
-position. This scheduler corrects those semantics for tagged sessions only.
-``InferceptSessionScheduler`` supplies only continuation semantics for focused
-tests. ``InferceptPolicyScheduler`` adds measured swap budgets, min-waste
-preserve/discard/swap decisions, FCFS restore, and recomputation chunking.
-"""
 import math
 import logging
 import os
@@ -527,15 +518,7 @@ class InferceptPolicyScheduler(InferceptSessionScheduler):
         return output
 
     def _relieve_waiting_ownership(self):
-        """Break idle FCFS admission deadlock from younger resumed owners.
-
-        A streaming continuation can be WAITING while retaining GPU blocks.
-        Native preemption only considers RUNNING requests. If an older head
-        cannot satisfy full-prompt admission, those younger owners can block
-        it forever. Release youngest ready/returning owners until the head
-        fits. Preserve CPU chunks for subsequent recomputation and restore;
-        never touch tool waits or active DMA.
-        """
+        """Break idle FCFS admission deadlock from younger resumed owners."""
         if self.running or self.residency.pending is not None or not self.scheduler_reserve_full_isl:
             return
         ready = sorted((r for r in (*self.waiting, *self.skipped_waiting)

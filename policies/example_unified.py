@@ -1,30 +1,3 @@
-"""A worked example of a policy that spans all three axes from one state.
-
-Not a proposal and not tuned -- it exists so that "how would someone write a
-unified policy" has an answer you can read and run. Load it with:
-
-    python -m serving --planes program --kv-pool-tokens N \\
-        --policy policies.example_unified:ContextAwarePolicy
-
-What makes it unified rather than three policies in a trenchcoat is the shared
-dictionary `self._value`. Each axis reads the SAME per-program valuation, so
-the three decisions cannot disagree about which programs matter:
-
-  * retention pins the context of a program it considers valuable
-  * scheduling gives that program a better priority, and holds a low-value
-    program at the gate when the pool is tight
-  * routing sends its next turn back to the instance holding that context
-
-Split across three objects, each would have to recompute the valuation from the
-PCB, and the moment one of them used a slightly different rule the three knobs
-would be pulling in different directions for reasons no counter would show.
-That is the failure a unified policy is meant to prevent, and it is why sharing
-a FILE (the evolve harness's `evolved_joint.py` shim) is not the same thing as
-sharing an OBJECT.
-
-Only the methods it defines are attached. It happens to define all three axes;
-a policy that defined two would keep the engine's own rule for the third.
-"""
 from typing import Optional
 
 from .program import ProgramControlBlock

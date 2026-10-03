@@ -1,22 +1,4 @@
-"""SAGA's prefetch: recompute an evicted context before its tool returns.
 
-This mirrors what the engine integration does (`bench/core/runner.py::prefetch`
--- a one-token generation over the session's prompt, pinned until the result
-is due), not a host-to-device transfer. SAGA prefetches by *recomputation*, so
-the simulator does the same: a synthetic prefill is submitted for a session
-whose learned tool gap is nearly elapsed, and its prefix is protected until
-the real successor arrives and hits it.
-
-Timing comes from the learned per-tool distribution that `--retention
-saga-tool-ttl` already maintains (`SagaToolTTL.predicted_gap_s`, whose own
-docstring names this caller). Without that estimator there is no schedule to
-prefetch against, and this refuses rather than guessing a gap.
-
-The cost is real and is paid where it falls: the synthetic prefill occupies the
-batch, consumes KV, and competes with live work, so a prefetch issued too
-early is visibly expensive rather than free. Its request is marked so metrics
-never count it as a program turn.
-"""
 NS = 1e9
 #: Prefetch request ids live above any workload id so they cannot collide.
 ID_BASE = 1_000_000_000

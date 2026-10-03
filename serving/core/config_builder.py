@@ -53,17 +53,7 @@ def _prepare_input_config_paths(astra_sim, inputs_root):
 
 
 def _resolve_parallelism(instance, model_config):
-    """Infer and validate tp_size, pp_size, ep_size from partial config.
-
-    Users may provide any subset of {num_npus, tp_size, pp_size, ep_size}.
-    Missing values are inferred; conflicts raise ValueError.
-
-    Rules:
-        num_npus = tp_size * pp_size
-        For MoE models: ep_size defaults to tp_size (same GPUs)
-        For dense models: ep_size defaults to 1
-        Without dp_group: ep_size <= tp_size
-    """
+   
     # Accept either the Mistral-style ``num_local_experts`` key or the
     # HF/Qwen3 ``num_experts`` key — HF naming varies per model family
     # and the profiler's configs track upstream.

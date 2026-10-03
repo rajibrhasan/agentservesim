@@ -1,13 +1,4 @@
-"""Plot helpers for ``bench validate``.
 
-Three matplotlib plots, all written as PNGs into the validation output
-directory; plus a plain-text summary table:
-
-    <prefix>_throughput.png     prompt + gen throughput (sim vs vLLM)
-    <prefix>_requests.png       running / waiting requests (sim vs vLLM)
-    <prefix>_latency.png        TTFT / TPOT / latency CDFs (sim vs vLLM)
-    <prefix>_summary.txt        TTFT / TPOT / latency at mean/median/p90/p95/p99
-"""
 
 from __future__ import annotations
 

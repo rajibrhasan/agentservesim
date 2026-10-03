@@ -1,18 +1,4 @@
-"""The runtime split must not have changed a single simulator invocation.
-
-`run_cell` moved out of `evolve/simrun.py` into `runtime/` on 2026-09-12. The
-risk in a move like that is not a crash -- a crash is loud. It is a command
-line that differs by one flag, so every number after the move is measured on a
-slightly different simulator than every number before it, and nothing says so.
-
-On 2026-09-12 the engine and this tree were unified into one directory, which
-changed the command line in two intended ways; the equivalence test now
-enumerates those and fails on any other difference.
-
-These tests capture the argv `_run_cell_once` builds and compare it against the
-same argv built by the pre-split file, kept beside this test as a golden. They
-need no simulator: `subprocess.run` is intercepted before anything executes.
-"""
+"""The runtime split must not have changed a single simulator invocation."""
 import os
 import sys
 
@@ -62,24 +48,7 @@ def _capture(module, cell=CELL, flags=FLAGS):
 
 
 def _load_golden():
-    """Load the pre-split driver by path, with its deployment constants pinned.
-
-    Explicit loader, not `spec_from_file_location` alone: that infers the loader
-    from the file extension and returns None for anything it does not
-    recognize, which surfaces as an AttributeError on `spec.loader` far from the
-    cause.
-
-    The pinning matters. The golden derives REPO / AS_ROOT from its OWN file
-    location (`dirname(dirname(__file__))`), and it now sits two directories
-    deeper than `evolve/simrun.py` did, so loading it verbatim yields bind paths
-    that differ for a reason that has nothing to do with the split. Those
-    constants are therefore set equal to the live ones, and this test compares
-    what it claims to compare: how the argv is ASSEMBLED from them.
-
-    That the live constants themselves are right is a separate claim, checked
-    separately in `test_paths_resolve_to_the_real_checkout` -- overwriting them
-    here without that test would let a wrong REPO pass unnoticed.
-    """
+    """Load the pre-split driver by path, with its deployment constants pinned."""
     import importlib.util
     from importlib.machinery import SourceFileLoader
     loader = SourceFileLoader("simrun_presplit", GOLDEN)

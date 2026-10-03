@@ -1,29 +1,4 @@
-"""Real-side driver for the agent serving policy tuple
-(retention, scheduling, routing).
 
-Mirrors ``serving/core/unified_policy_adapter.py`` (the simulator side) on top
-of one or more in-process AsyncLLM engines: the SAME harness policy
-objects (``agentservesim/harness``) decide, the same Program Control
-Block table is shared by the three executors, and the same events fire
-at the same points of a program's life:
-
-    turn ready   -> route (instance)  -> arrival release + priority stamp
-    turn done    -> service accrual   -> retention decision (protect/evict)
-
-Transport differences from the simulator are confined here:
-  * KV protection goes to the engine through EngineCore utilities
-    (``kv_protect`` / ``kv_release`` / ``kv_evict``, branch agent-knobs,
-    gated by VLLM_KV_PROTECTION=1), addressed by the ``kv_tag`` the turn
-    was submitted with (``{program_id}:{turn_idx}``).
-  * The executors are synchronous and call the transport inline, while
-    AsyncLLM utilities are coroutines. Executor calls therefore run on a
-    single worker thread and the transport hops back onto the event loop
-    with ``run_coroutine_threadsafe``; one worker keeps the shared PCB
-    table single-threaded.
-  * ``now`` is wall-clock seconds on the event loop's monotonic clock,
-    the clock the engine's parked-block deadlines (time.time()) are
-    compared against is translated at the transport.
-"""
 from __future__ import annotations
 
 import asyncio
@@ -56,21 +31,7 @@ def default_harness_root() -> str:
 
 
 def import_harness(harness_root: Optional[str] = None):
-    """Put the policy package on sys.path and import it.
-
-    Mirrors serving/core/unified_policy_adapter.py::import_harness, and must:
-    the 2026-09-13 reorganisation (policies by paper, not by axis) dissolved
-    `policies.retention` / `.scheduling` / `.routing` and moved `waste_model`
-    under `policies.utils`, the simulator side was updated and this was not, so
-    every replay died at import for two days (first hit by job 42265618 after
-    31 minutes of RTX time). The axis names now resolve to the package itself,
-    which binds every class the driver looks up by attribute.
-
-    `root` is a place to import FROM, not a checkout to validate -- it may hold
-    a whole `policies/` package or a single module naming one class, which is
-    what a staged search candidate looks like. The old os.path.isdir check on
-    `harness/` rejected the latter.
-    """
+    """Put the policy package on sys.path and import it."""
     root = harness_root or default_harness_root()
     if root and root not in sys.path:
         sys.path.insert(0, root)
@@ -87,15 +48,7 @@ def import_harness(harness_root: Optional[str] = None):
 
 
 def _require_tau(tau_s, name):
-    """A TTL-family window the caller must choose.
-
-    `ttl` and `saga-ttl` have no intrinsic window -- TTLRetention takes tau_s
-    with no default -- so an omitted value used to fall through to the CLI's
-    60.0, a figure no paper or measurement supports. That is how SAGA ran at 60
-    against a real leg at 2 and the gap read as a fidelity problem for most of a
-    day. Failing here costs a second; running the wrong policy costs an hour and
-    looks like a result.
-    """
+    """A TTL-family window the caller must choose."""
     if tau_s is None:
         raise ValueError(
             f"--retention {name} needs --retention-tau: it has no default window. "
@@ -558,12 +511,11 @@ class PolicyDriver:
             # expired blocks may still need their normal successor release.
             self.programs.on_memory_pressure(program_id, kv_protected=protected)
         # Gap observation must precede the stamp: the dispatch transition
-        # (on_turn_release inside stamp) clears gap_started_ts, the only
-        # record of the just-ended gap's duration. Same order as the
-        # simulator's UnifiedPolicyAdapter.on_turn_routed. Without this a
-        # gap-learning policy (Continuum) never builds history and pins
-        # every turn as a cold start (measured 2026-09-08: real pinned
-        # 2,873/2,873 turns vs 2,662 in the simulator).
+        # (on_turn_release inside stamp) clears gap_started_ts, the only record of the
+        # just-ended gap's duration. Same order as the simulator's
+        # UnifiedPolicyAdapter.on_turn_routed. Without this a gap-learning policy
+        # (Continuum) never builds history and pins every turn as a cold start (measured
+        # 2026-09-08: real pinned 2,873/2,873 turns vs 2,662 in the simulator).
         self.retention_exec.observe_arrival(
             self.programs.get(program_id), now)
         # Stamp before release: a pinned-first scheduler needs the pin.

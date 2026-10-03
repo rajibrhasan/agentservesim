@@ -64,22 +64,7 @@ def _match_slice(
     ancestors: list[str],
     slice_: dict[str, dict[str, Any]],
 ) -> str | None:
-    """Return the canonical layer name that matches, or None.
-
-    ``slice_`` is the host-to-worker serialized form of a ``Catalog``
-    group — ``{canonical_name: {"vllm": cls, "within": parent_cls_or_None,
-    "tp_stable": ...}}``.
-
-    Ambiguity rule: when several catalog entries match the same node
-    (same ``vllm`` class, several ``within`` candidates all present in
-    the ancestor chain), the one whose ``within`` is **deepest** in the
-    ancestor chain wins. That disambiguates cases like Qwen3's two
-    RMSNorms — one inside ``Qwen3DecoderLayer`` (input/post layernorm)
-    and one inside ``Qwen3Attention`` (qk_norm) — so the inner match
-    (``Qwen3Attention``) doesn't get swallowed by the outer catalog
-    entry purely because of YAML ordering. Entries without ``within``
-    are treated as the lowest-specificity fallback.
-    """
+    """Return the canonical layer name that matches, or None."""
     best_name: str | None = None
     best_depth = -2  # within=None → depth -1; any match wins over no match
     for canonical, spec in slice_.items():

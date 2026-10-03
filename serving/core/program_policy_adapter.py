@@ -1,31 +1,4 @@
-"""Running the harness's policies on the program-aware planes.
 
-The policies themselves are not reimplemented here and must not be: this
-imports the SAME classes the real GPU harness runs (`policies/continuum.py`,
-`policies/saga.py`, ...). A policy that is a different object on the two
-hosts is not one policy, and the arena's whole claim is that it compares the
-same decision rule against a real measurement.
-
-What this module is, then, is a translator, and it translates in exactly one
-direction: plane state -> the record a policy reads. There is deliberately no
-`ProgramTable` here. The old adapter kept one, and had to, because the old
-engine had no program record of its own; keeping a second one now would put two
-copies of `turns_completed`, `in_gap` and `attained_service_s` in the same
-process, updated by different code, to be found disagreeing later. The
-orchestrator owns those facts and a `ProgramControlBlock` is built from it on
-demand.
-
-Three things the planes hand over that a `ProgramState` does not carry -- a
-queue snapshot for the admission gate, per-request token counts for the victim
-rule, and per-instance load for routing -- arrive as small structs defined by
-the planes themselves, so `program_scheduler` and `program_router` never import
-`harness`. The dependency points one way: policies know nothing about planes,
-planes know nothing about policies, and this module knows both.
-
-Declining is always safe. Every hook returns the engine's default when a policy
-returns None or raises, because under policy search candidates misbehave, and a
-bad candidate should cost a fallback rather than a run.
-"""
 from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Optional
@@ -114,26 +87,7 @@ def build_routing(value, mod=None, *, num_instances=1, capacity_limit=None):
 
 def load_unified(spec: str, flag: str = "--policy", *,
                  instantiate: bool = True):
-    """Instantiate ONE object that plays as many of the three axes as it likes.
-
-    `spec` is `module:Class` (`harness.my_policy:MyPolicy`). The object is
-    assigned to every axis whose interface it implements, so a policy that
-    decides retention AND scheduling from one piece of state is one object with
-    one piece of state -- not two objects that happen to share a file.
-
-    That distinction is the reason this exists. The evolve harness could
-    already put both classes in `evolved_joint.py` and shim each axis onto it,
-    but a shim shares a MODULE: the two instances still had to coordinate
-    through class attributes or globals, which is a shared mutable the search
-    could corrupt and nothing would report. And routing was never in it at all,
-    so a policy could not say "hold this program's context BECAUSE I am about
-    to route its next turn back here" -- the one sentence a genuinely unified
-    policy exists to say.
-
-    Implementing an axis means defining its method, not inheriting its base: a
-    policy may implement one, two or three, and whatever it leaves out falls
-    back to the engine's own rule for that axis.
-    """
+    """Instantiate ONE object that plays as many of the three axes as it likes."""
     import importlib
 
     if ":" not in spec:
@@ -397,15 +351,7 @@ class ProgramPolicyAdapter:
     # ------------------------------------------------------------ hooks
 
     def _call(self, obj, name: str, default: Any, *args) -> Any:
-        """Call an OPTIONAL hook, if the policy has one.
-
-        The published values inherit no-op defaults from their base, so the
-        method is always there. A unified policy subclasses nothing -- it
-        cannot subclass all three bases -- so an optional hook it did not
-        write is simply absent. That is "no opinion", not misbehaviour, and
-        counting it as a policy error would report 141 failures on a policy
-        that is working exactly as written.
-        """
+        """Call an OPTIONAL hook, if the policy has one."""
         fn = getattr(obj, name, None)
         if fn is None:
             return default

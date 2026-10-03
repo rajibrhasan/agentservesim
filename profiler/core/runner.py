@@ -1,14 +1,4 @@
-"""Top-level orchestration.
-
-Entry points:
-    run_full(arch_path, args, out_root)
-    run_slice(arch_path, args, tp, group, out_root)
-
-Both are called from ``__main__.py``. They differ only in which
-categories and TPs are iterated; everything else — engine spin-up,
-catalog slicing, shot firing, sink coalescing, tp_stable
-replication — is shared.
-"""
+"""Top-level orchestration."""
 
 from __future__ import annotations
 

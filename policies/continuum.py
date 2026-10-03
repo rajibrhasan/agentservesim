@@ -1,13 +1,3 @@
-"""Continuum (Li et al., 2025, arXiv:2511.02230).
-
-Two halves that only make sense together: the KV half pins a finished turn's
-context for a fixed window when its tool is fast, and the scheduling half puts
-turns whose context is still pinned ahead of those whose is not. The second is
-meaningful only because the first exists.
-
-As RELEASED (github.com/Hanchenli/vllm-continuum, preview code), not the
-paper's CDF estimation.
-"""
 from typing import Optional
 
 from .base import KVPolicy, SchedulingPolicy

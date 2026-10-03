@@ -12,28 +12,6 @@ class RoutingResult:
 
 
 class GateRouter:
-    """Simulator-side model of the MoE gate + expert dispatch.
-
-    Policies:
-        BALANCED  (default) — closed-form pigeonhole approximation of
-                              a trained learned gate with load-balancing
-                              auxiliary loss. Deterministic.
-        RR                  — deterministic round-robin per token.
-        RAND                — uniform random per token (seedable).
-        CUSTOM              — user-supplied ``_custom_gate_function``.
-
-    ``block_copy``: simulator-side optimization that emits one
-    transformer block's trace and replays it ``num_hidden_layers``
-    times instead of re-computing the routing every layer. Cuts
-    trace-generation time by roughly ``num_hidden_layers`` × on MoE
-    models. Safe whenever every layer's routing produces the same
-    (local_tokens, activated_experts) pair — which is true for
-    BALANCED (deterministic), and a harmless approximation for
-    RR / RAND (per-layer variance in activated-count is small once
-    the batch is at saturation). Default True for speed; CUSTOM
-    policies that legitimately need per-layer variance can set
-    ``block_copy=False`` in the constructor.
-    """
 
     _SUPPORTED_POLICIES = ("BALANCED", "RR", "RAND", "CUSTOM")
 
@@ -105,19 +83,7 @@ class GateRouter:
         return counts
 
     def route_ep(self, layer_num, batch_id, total_len, ep_size):
-        """EP-aware routing: returns per-rank token counts and activated experts.
-
-        Tokens are distributed evenly across EP ranks before dispatch
-        (matching vLLM's EP execution model). Each token selects k
-        experts; the owning rank receives the token for local
-        execution. Expert-to-rank assignment uses even partitioning:
-        ``expert_id * ep // num_experts``.
-
-        BALANCED short-circuits the per-token draw and uses the
-        pigeonhole expression — trained MoE gates (Qwen3, Mixtral,
-        DeepSeek, …) are load-balance-regularised so per-expert
-        traffic is approximately uniform at serving time.
-        """
+        """EP-aware routing: returns per-rank token counts and activated experts."""
         total_len = int(total_len)
         ep_size = max(1, int(ep_size))
 

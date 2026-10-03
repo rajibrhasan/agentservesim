@@ -1,26 +1,4 @@
-"""vLLM worker extension.
-
-Registered via ``worker_extension_cls="profiler.core.hooks.extension.Extension"``
-when constructing the ``vllm.LLM``. vLLM instantiates one Extension per
-TP-rank worker process and exposes its methods through
-``llm.collective_rpc(method_name, args=...)``.
-
-The sole public method here is ``fire()``: it takes a serialized Shot
-plus a catalog slice (the subset of the layer map relevant to the
-category being profiled), runs the synthetic batch through
-``model_runner.execute_model`` under ``layerwise_profile``, and
-returns per-layer CUDA timings.
-
-Measurement protocol per shot:
-    3 warmup forwards (discarded) — amortise JIT / paged-buffer setup
-    N timed forwards inside ``layerwise_profile`` — the hook aggregates
-        ``cuda_time_us`` across invocations; ``extract_samples``
-        divides by ``invocations`` to return the per-call mean.
-
-N defaults to ``ProfileArgs.measurement_iterations`` (3). A single
-timed sample can swing 15-25%% on large GEMMs due to DVFS / boost
-jitter; averaging cuts that noise floor dramatically.
-"""
+"""vLLM worker extension."""
 
 from __future__ import annotations
 

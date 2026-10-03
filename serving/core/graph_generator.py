@@ -7,17 +7,6 @@ from .run_paths import input_path
 
 logger = get_logger("GraphGenerator")
 
-# The Chakra LLM converter used to run as ``python -m
-# chakra.src.converter.converter`` once per batch per iteration.  Measured on
-# a warm node, that fork cost ~112 ms, of which ~109 ms was interpreter
-# startup plus re-importing chakra's protobuf schema (et_def_pb2 alone is
-# ~33 ms) and only ~3 ms was the conversion.  At the ~6.7 conversions/s this
-# loop sustains, it was ~75% of total wall clock, with ASTRA-Sim blocked in
-# pipe_read for all of it.  Doing the same work in-process is equivalent:
-# LLMConverter keeps every piece of per-conversion state on the instance, so
-# a fresh instance per call matches a fresh process, and it context-manages
-# every file it opens.  The `cwd` the subprocess used was decorative --
-# `chakra` resolves off PYTHONPATH, so both paths load the same module file.
 _CONVERTER_CLS = None
 _CONVERTER_UNAVAILABLE = False
 

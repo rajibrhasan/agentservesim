@@ -1,12 +1,4 @@
-"""Static observation-boundary check for retention candidates.
-
-Runs before any simulation. A candidate that reads outside the PCB,
-reaches for the filesystem, the clock, or randomness, or keys state by
-program identity is rejected here with a reason the search can read.
-The check is syntactic (AST), so it is cheap and deterministic; the
-boundary it enforces is the one the paper states: the policy sees the
-Program Control Block and the current time, nothing else.
-"""
+"""Static checks for candidate imports, observed state, and policy methods."""
 
 import ast
 import os
@@ -15,11 +7,6 @@ ALLOWED_MODULES = {
     "math", "statistics", "collections", "typing", "dataclasses",
     # The contract, under the name the policies package uses now.
     "policies.base", "policies.program", "policies.utils.waste_model",
-    # The legacy axis names. Kept because every champion already evolved --
-    # and every best_program.py under evolve/results/ -- was written against
-    # them, and those are records of runs that happened. Removing them would
-    # not make an old candidate wrong, it would make it unimportable, which is
-    # a different and worse thing.
     "harness.retention", "harness.program", "harness.waste_model",
     "harness.scheduling",
 }
@@ -31,14 +18,6 @@ FORBIDDEN_CALLS = {
 # program it is. Dunder access closes the reflection routes around that.
 FORBIDDEN_ATTRS = {"program_id", "kv_request_id", "__dict__", "__class__",
                    "__globals__", "__subclasses__", "__code__", "__builtins__"}
-# One class per plane, several per file -- the convention `policies/continuum.py`
-# and every recorded champion follow. A candidate must define at least one of
-# them; whatever it leaves out falls back to the engine's own rule, which is a
-# legal policy and not an error.
-#
-# This was three axis-specific contracts selected by EVOLVE_AXIS, which forced
-# the search to be told which plane it was searching -- a fact already implied
-# by the classes a candidate defines.
 PLANE_CLASSES = {
     "retention": ("EvolvedRetention", {"on_turn_complete", "on_turn_arrival"}),
     "scheduling": ("EvolvedScheduling", {"priority", "victim", "admit"}),
@@ -69,10 +48,6 @@ def check_source(src):
         elif isinstance(node, ast.Call):
             f = node.func
             if isinstance(f, ast.Name) and f.id in FORBIDDEN_CALLS:
-                # getattr with a literal, non-forbidden, non-dunder name is the
-                # defensive form of plain attribute access (candidates write
-                # getattr(self.signals, "kv_utilization", None)); only the
-                # dynamic form can reach identity fields.
                 lit = (f.id == "getattr" and len(node.args) >= 2
                        and isinstance(node.args[1], ast.Constant)
                        and isinstance(node.args[1].value, str)

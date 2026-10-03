@@ -1,15 +1,4 @@
-"""InferCept-style waste model for the min-waste retention value.
 
-Ported from the vllm-continuum fork's estimate_with_func.py (user-
-authorized reference, 2026-08-18); formulas are InferCept Eq. 2
-(WastePreserve) and Eq. 4 (WasteChunkDiscard) with bytes_per_token
-stripped, so both wastes are in token*seconds and directly comparable.
-
-The forward-time model T_fwd(x) = (a*x + c)/1000 seconds and the
-saturation knee S come from a measured per-hardware profile sweep
-(never hand-fit): JSON files with keys a, c, S plus the raw sweep
-points, e.g. profiles/old/infercept_profile_l4_8B_tp1.json.
-"""
 
 from __future__ import annotations
 
@@ -73,19 +62,7 @@ _HW_TAG = {"RTXPRO6000": "rtx6000", "B200": "b200", "L4": "l4",
 
 def resolve_profile(hardware: str, model: str, tp_size: int,
                     profiles_dir: str | None = None) -> str:
-    """Path to the InferCept waste profile measured on THIS hardware.
-
-    The profile is a fit of T_fwd against batch size on one GPU, one model and
-    one tensor-parallel width; using another platform's numbers silently prices
-    every swap decision wrong. So it is derived from the cluster config rather
-    than asked for, because the cluster config already states all three and a
-    flag that must agree with it is a flag that will one day disagree with it.
-
-    `--retention min-waste` used to require `--min-waste-profile` and default it
-    to None, so forgetting it raised `TypeError: expected str, bytes or
-    os.PathLike object, not NoneType` from inside a JSON loader -- and the arena
-    runner never emitted the flag at all, so InferCept could not run there.
-    """
+    """Path to the InferCept waste profile measured on THIS hardware."""
     if profiles_dir is None:
         profiles_dir = os.path.join(os.path.dirname(os.path.dirname(
             os.path.abspath(__file__))), "profiles")

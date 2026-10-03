@@ -1,9 +1,4 @@
-"""Native vLLM layer hooks for explicitly reserved InferCept swap plans.
 
-The scheduler must reserve physical blocks before queue_plan(), and retain
-ownership until take_acknowledgement() succeeds across every TP rank. This
-connector transports plans; the interception policy supplies those plans.
-"""
 from dataclasses import dataclass
 
 from vllm.distributed.kv_transfer.kv_connector.v1.base import (

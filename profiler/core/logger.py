@@ -73,17 +73,9 @@ _THEME = Theme(
         "ok": "green bold",
     }
 )
-# ``soft_wrap=True`` tells Rich not to hard-wrap a log line when its
-# rendered length exceeds the terminal width. Without this, messages
-# like multi-path skew grids or long skew_fit keys get chopped across
-# several visual lines.
-#
-# No ``force_terminal`` — Rich auto-detects. Interactive terminals get
-# ANSI colours; redirected files (``> out.log`` / nohup) get plain
-# text, which means no stray escape bytes end up in the log file and
-# IDE viewers can run their own log-pattern highlighting. If an IDE
-# terminal doesn't self-identify as a TTY and colours vanish there,
-# set ``FORCE_COLOR=1`` in the environment.
+# ``soft_wrap=True`` tells Rich not to hard-wrap a log line when its rendered length
+# exceeds the terminal width. Without this, messages like multi-path skew grids or long
+# skew_fit keys get chopped across several visual lines.
 _console = Console(theme=_THEME, soft_wrap=True)
 
 # The single logger the rest of the profiler uses. Children of this
@@ -149,19 +141,7 @@ def configure(level: int | str = logging.WARNING) -> None:
 
 @contextmanager
 def capture_stdio() -> Iterator[None]:
-    """Capture C-level stdout+stderr while inside the ``with`` block.
-
-    Why this is not just contextlib.redirect_stdout:
-        vLLM's engine startup prints from C++ (pybind11 / torch) and
-        from CUDA library init. Those bypass ``sys.stdout``; you have
-        to swap the underlying file descriptors (1 and 2) to silence
-        them. We redirect both to a tempfile, then on exit either
-        discard the content (success) or re-emit it at ERROR level
-        (failure).
-
-        At DEBUG verbosity we no-op so the user can see vLLM's own
-        diagnostics verbatim.
-    """
+    """Capture C-level stdout+stderr while inside the ``with`` block."""
     if _logger.isEnabledFor(logging.DEBUG):
         # User asked for maximal noise; don't hide anything.
         yield

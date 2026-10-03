@@ -1,27 +1,4 @@
-"""Clairvoyant probe policies: per-axis headroom bounds (sim-only).
 
-These policies read TRACE knowledge (the next tool gap's duration, the
-program's remaining work) that no deployable policy can have, which is
-exactly the point: they bound what each axis can possibly buy in a cell.
-The gap between the best published policy and the oracle on an axis is
-the headroom that justifies (or kills) searching that axis.
-
-They are simulator-only probes. The real driver never instantiates
-them: the OracleTable requires the full trace up front, and the harness
-PCB deliberately excludes future knowledge (see program.gap_elapsed_s).
-
-- OracleTTLRetention: TTL with a perfect per-turn tau — protect each
-  gap until exactly its measured end. Bounds the gap-predicting TTL
-  family (Continuum's predictive TTL with a perfect predictor). Under
-  pressure the safety valve breaks unexpired protections
-  latest-deadline-first, which with exact deadlines evicts the context
-  whose turn returns furthest in the future — a Belady-flavored bonus
-  that a real TTL's inflated deadlines cannot reproduce.
-- OracleSRPTScheduling: priority = the program's true remaining work
-  (new input + output tokens over its remaining turns). Bounds the
-  program-level size-based scheduling family (PLAS approximates this
-  with attained service as the proxy).
-"""
 
 from __future__ import annotations
 

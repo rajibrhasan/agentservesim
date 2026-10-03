@@ -1,37 +1,67 @@
-# Anonymous submission artifact
+# AgentServeSim
 
-This repository contains the serving simulator, program-aware policies, replay driver, profiling pipeline, and source changes for the reference serving engine.
+Agent-serving simulation, profiling, policy search, and reference replay with patched vLLM v0.19.0.
 
-## Contents
+## Layout
 
-- `serving/`: simulator and scheduling, routing, and KV management integration.
-- `policies/`, `runtime/`, `harness/`, `evolve/`: policy interfaces, implementations, and search support.
-- `bench/`: real-serving replay and measurement.
-- `profiler/`: profiling code and selected B200/RTX PRO 6000 performance tables.
-- `configs/`: model and deployment descriptions.
-- `astra-sim/`: vendored analytical backend and its initialized source dependencies.
-- `integration/`: Python integration patch for upstream vLLM v0.19.0.
-- `tests/`: source regression tests; some require dependencies or experiment fixtures not included here.
+| Directory                                 | Contents                              |
+| ----------------------------------------- | ------------------------------------- |
+| `serving/`                              | Simulator                             |
+| `bench/`                                | Reference replay and measurement      |
+| `profiler/`                             | Profiling code and performance tables |
+| `policies/`, `harness/`, `runtime/` | Policies and shared execution support |
+| `evolve/`                               | Policy search                         |
+| `configs/`                              | Model and cluster configurations      |
+| `astra-sim/`, `vllm/`                 | Included backend sources              |
 
-## Simulator setup
+Commands below run from the repository root. The example is **B200 / Phi-3.5-MoE / TP1 / Continuum / BFCL150 at 0.8 programs/s**. 
 
-With Docker available, from this directory:
+The workload is included in `workloads/bfcl_phi_jps0.8_n150.jsonl.gz`: **14.5 MiB compressed, 120 MiB extracted**, containing 150 programs and 1,370 turns. Extract it once before simulation or reference serving:
+
+```sh
+gzip -dk workloads/bfcl_phi_jps0.8_n150.jsonl.gz
+```
+
+## Profiling
+
+On one B200, install the patched vLLM environment and profile:
+
+```sh
+bash scripts/install-vllm.sh
+source .venv/bin/activate
+bash scripts/profile-example.sh
+```
+
+## Simulation
+
+Build and enter the CPU simulator container, then run:
 
 ```sh
 bash scripts/docker-sim.sh
 # Inside the container:
 bash scripts/compile.sh
-python3 -m serving --help
+bash scripts/simulate-example.sh
 ```
 
-The Docker build downloads dependencies and requires network access. The analytical ASTRA-Sim backend is included; ns-3 and htsim backends are outside this export. Consult the command-line help for the cluster and workload options. Workload conversion utilities are in `workloads/generators/`.
+Outputs go to `outputs/example-sim/`.
 
-## Reference serving
+## Reference Serving
 
-See `integration/README.md` for applying the engine patch. Real replay requires GPUs, model weights obtained under their respective licenses, and the patched vLLM installation. Profiling is a separate preparation step; the included tables do not cover every deployment in `configs/`.
+On one B200, using the patched vLLM environment installed above:
 
-## Submission scope
+```sh
+source .venv/bin/activate
+bash scripts/reference-example.sh
+```
 
-This is a source artifact, not a complete result-reproduction bundle. It excludes private credentials, original Git history, cluster job scripts, installed environments, raw experiment logs, model weights, and workload datasets. Site-specific launch paths have been replaced with placeholders; supply local paths when using those tools. Fresh container builds, GPU replay, and the complete test suite have not been validated on this exported copy.
+Outputs go to `outputs/example-real/`. 
 
-Upstream licenses and required copyright notices are retained. These attributions identify dependencies and must remain with redistributed source. The fresh repository uses an anonymous commit identity. `FILE_MANIFEST.json` records exported file checksums.
+## Policy Search
+
+Configure the LLM endpoint in `evolve/config_local.yaml` or `evolve/config_openrouter.yaml`. Inside the simulator container:
+
+```sh
+EVOLVE_DATASET=/path/to/search-trace.jsonl \
+EVOLVE_CLUSTER_CONFIG=/path/to/search-cluster.json \
+  bash scripts/search-example.sh
+```

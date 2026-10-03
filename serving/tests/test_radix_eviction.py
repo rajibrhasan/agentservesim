@@ -1,16 +1,4 @@
-"""Partial eviction: take the pages asked for, keep the prefix matchable.
-
-vLLM reclaims individual blocks from a free-block queue, so a one-block
-allocation never costs a four-block prefix. A radix node is compressed and
-can stand for an arbitrarily long run, so evicting it whole threw the rest
-away -- 16 tokens asked, a 64-token cached prefix gone.
-
-The float case is here because it is how the bug actually arrived:
-memory_model.evict_prefix_cache computes its target as
-`(bytes + kv_size - 1) // kv_size`, which is a float when `bytes` is one, and
-the tail split slices node keys with it. Every run needing a partial eviction
-died in _split_node.
-"""
+"""Partial eviction: take the pages asked for, keep the prefix matchable."""
 
 import pytest
 

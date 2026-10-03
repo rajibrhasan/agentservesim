@@ -151,20 +151,16 @@ class PowerAccumulator:
                 ctx.power_model.add_pim_active_energy_consumption(ctx.node_id, lat)
 
 
-# ======================================================================
-# Perf DB loading and lookup (new per-category format)
-# ======================================================================
-#
-# New layout under profiler/perf/<hw>/<model>/<variant>/:
-#     meta.yaml                       profiler settings, effective engine kwargs
-#     tp<N>/dense.csv                 layer, tokens, time_us
-#     tp<N>/per_sequence.csv          layer, sequences, time_us
-#     tp<N>/attention.csv             prefill_chunk, kv_prefill, n_decode, kv_decode, time_us
-#     tp<N>/moe.csv                   tokens, activated_experts, time_us    (MoE only)
-#
-# Architecture structure (catalog + sequence) lives in the profiler's
-# profiler/models/<model_type>.yaml and drives which canonical
-# layers the simulator emits.
+# ====================================================================== Perf DB loading
+# and lookup (new per-category format)
+# ====================================================================== New layout
+# under profiler/perf/<hw>/<model>/<variant>/: meta.yaml profiler settings, effective
+# engine kwargs tp<N>/dense.csv layer, tokens, time_us tp<N>/per_sequence.csv layer,
+# sequences, time_us tp<N>/attention.csv prefill_chunk, kv_prefill, n_decode, kv_decode,
+# time_us tp<N>/moe.csv tokens, activated_experts, time_us (MoE only) Architecture
+# structure (catalog + sequence) lives in the profiler's
+# profiler/models/<model_type>.yaml and drives which canonical layers the simulator
+# emits.
 
 
 def _load_architecture(model_type):
@@ -312,15 +308,11 @@ def _build_attention_table(df):
 
 
 def _build_step_overhead_table(df):
-    """Build the measured step-overhead table from ``step_overhead.csv``
-    (columns: prefill_chunk, n_decode, overhead_us, ...). The overhead is
-    the profiler-measured residual between real engine step wall time and
-    the kernel-model step time (``step_kernel_ns``) at the same batch
-    composition — host/engine cost the layerwise kernel profile can't see.
-
-    Stored as pc-keyed slices for 2D interpolation: linear over n_decode
-    within a pc slice, then linear between the two bracketing pc slices.
-    """
+    """Build the measured step-overhead table from ``step_overhead.csv`` (columns:
+    prefill_chunk, n_decode, overhead_us, ...). The overhead is the profiler-
+    measured residual between real engine step wall time and the kernel-model step
+    time (``step_kernel_ns``) at the same batch composition — host/engine cost the
+    layerwise kernel profile can't see."""
     slices = {}
     for pc, group in df.groupby("prefill_chunk"):
         g = group.sort_values("n_decode")
@@ -629,34 +621,7 @@ def _attn_slice_lookup(tbl, pc, nd, kv_prefill, kv_decode):
     return v_lo + t_kp * (v_hi - v_lo)
 
 
-# ---------------------------------------------------------------------------
-# Skew correction
-# ---------------------------------------------------------------------------
-# When the runtime batch has heterogeneous decode kv lengths, the
-# profiled 4D grid (which carries one kv_decode value per shot) can
-# only tell us the uniform-mean latency. Empirically that's faster
-# than a truly skewed batch, because FlashAttention's varlen kernel
-# suffers tile padding + SM-imbalance costs that the uniform-mean
-# measurement misses.
-#
-# The skew profile (profiler/.../tp<N>/skew.csv + the fitted
-# ``skew_fit`` block in meta.yaml, with the bucket alpha table spilled
-# to ``tp<N>/skew_fit.csv``) captures this as a 5-axis lookup table of
-# alpha values where
-#
-#     t_skew = t_mean + alpha * (t_max - t_mean)
-#
-# With alpha=0 (the pre-correction behaviour) the simulator
-# systematically under-predicts attention latency by 5-10%, which
-# compounds across every batch in a session into noticeable TTFT /
-# TPOT drift vs. vLLM.
-#
-# Lookup is resolved per-batch via ``_skew_alpha``. The bin edges and
-# labels come from ``meta.yaml::skew_fit.bucket_axes`` so the profiler
-# can widen any axis (e.g. raise ``max_num_seqs`` above 128) without a
-# coordinated code change here. The ``_DEFAULT_SKEW_AXES`` block below
-# is used as a fallback only when the meta predates that field (which
-# is why its shape still matches the original hard-coded scheme).
+
 _ATTN_SKEW_ALPHA_FALLBACK: float = 0.093
 
 _DEFAULT_SKEW_AXES: dict = {
@@ -895,16 +860,13 @@ def _lookup_step_overhead(perf_db, tp, prefill_chunk, n_decode):
 def step_kernel_ns(perf_db, config, tp_size, prefill_chunk, kv_prefill,
                    n_decode, kv_decode_mean, kv_decode_max, kv_decode_min,
                    lm_head_len, *, moe_ep_size=None):
-    """Kernel-model time (ns) for one full engine step at the given batch
-    composition — the sum of every profiled layer the simulator would
-    emit (prologue + num_layers x transformer block + head), with NO host
-    overhead term. Pure function of the perf DB; used by the E2b
-    step-overhead analyzer (``experiments/e2b_step_overhead``) as the
-    baseline that real wall-step time is compared against, so the
-    measured residual is defined against exactly what the simulator
-    predicts. MoE requires explicit TP-backed EP with BALANCED routing;
-    this models the simulator's expert distribution, not measured routing.
-    """
+    """Kernel-model time (ns) for one full engine step at the given batch composition
+    — the sum of every profiled layer the simulator would emit (prologue +
+    num_layers x transformer block + head), with NO host overhead term. Pure
+    function of the perf DB; used by the E2b step-overhead analyzer
+    (``experiments/e2b_step_overhead``) as the baseline that real wall-step time
+    is compared against, so the measured residual is defined against exactly what
+    the simulator predicts."""
     seq = perf_db["architecture"].get("sequence", {})
     is_moe = bool(seq.get("mlp_moe"))
     if is_moe and (moe_ep_size != tp_size or seq["mlp_moe"] != ["moe"]):
@@ -1047,20 +1009,8 @@ def _layer_category(perf_db, layer_name):
 
 
 def _step_adjustment(ctx, bctx):
-    """Resolve the measured signed step residual into (scale, sampler_add_ns),
-    cached on the BatchCtx so it is computed once per emitted step.
-
-    Positive residuals (real step slower than the kernel model) are added
-    once on the sampler line, like the legacy env term. Negative residuals
-    (the kernel model over-predicts the composition, e.g. B200 pure decode)
-    cannot sit on a single trace line — comp_time must stay >= 0 and the
-    sampler is far smaller than the correction — so they are applied as a
-    uniform scale on every compute line of the step instead; the scale is
-    anchored to step_kernel_ns so the step total lands on the measured wall.
-
-    sampler_add_ns is None when no table is loaded (or the mode bypasses
-    it), which tells the sampler branch to fall back to the legacy env term.
-    """
+    """Resolve the measured signed step residual into (scale, sampler_add_ns), cached
+    on the BatchCtx so it is computed once per emitted step."""
     if bctx.step_adjust is None:
         mode = os.environ.get("STEP_OVERHEAD_MODE", "auto")
         measured = None
@@ -1089,42 +1039,7 @@ def _step_adjustment(ctx, bctx):
 
 
 def _host_overhead_ns(bctx):
-    """Exposed host overhead the analytical model omits, added to `sampler`.
-
-    Layerwise kernel profiling (`layerwise_profile()`) captures only GPU kernel
-    time. Controlled microbenchmarks (`experiments/microbench/`) show the sim
-    reproduces *pure* steps exactly (isolated decode and isolated short prefill
-    both match real vLLM to ~1%), so a blanket per-decode-step term is not
-    physically justified. The residual under load is concentrated on MIXED
-    prefill+decode steps — a step that carries a prefill chunk *and* ongoing
-    decodes — where real vLLM pays extra non-overlapped host cost (admission:
-    KV block allocation, block-table/input-tensor prep for the prefilling
-    sequences, scheduler bookkeeping) that the kernel profile can't see. Mixing
-    only occurs under concurrency, which is why the offset is emergent under load
-    and invisible in isolation.
-
-    The flat per-seq form does NOT transfer across hardware: the same absolute
-    coefficient that corrects L4 (a bandwidth-limited GPU that saturates on this
-    workload) massively over-corrects on B200 (which has the SM/bandwidth headroom
-    to never saturate, so its raw kernel model is already accurate). The excess
-    is therefore not a portable host constant but an emergent *contention* cost
-    that appears only when the running batch is saturated. The gated form scales
-    the term by running-batch occupancy (`lm_head_len / max_num_seqs`), which is
-    endogenously hardware-aware: the sim's own scheduler, driven by each GPU's
-    profiled kernel times, keeps occupancy low on fast hardware (batch drains
-    before it fills) and high on saturated hardware. So a single coefficient can
-    transfer: the gate collapses the term to ~0 on unsaturated B200 automatically.
-
-    Env-controlled (all default 0 = off, backward-compatible):
-        MIX_OVERHEAD_PER_SEQ_NS   per-active-seq ns, ONLY on mixed steps (the
-                                  microbench-justified term)
-        MIX_GATE_MODE             'flat' (default; term = c*n_seqs) or 'occ'
-                                  (term = c*n_seqs*occ**MIX_GATE_EXP, contention-gated)
-        MIX_GATE_MAX_SEQS         occupancy denominator for 'occ' (default 128)
-        MIX_GATE_EXP              occupancy exponent for 'occ' (default 1.0)
-        HOST_OVERHEAD_BASE_NS     fixed per-step ns (legacy)
-        HOST_OVERHEAD_PER_SEQ_NS  per-active-seq ns every step (legacy proxy)
-    """
+   
     n_seqs = max(0, bctx.lm_head_len)
     base = int(os.environ.get("HOST_OVERHEAD_BASE_NS", "0"))
     per_seq = int(os.environ.get("HOST_OVERHEAD_PER_SEQ_NS", "0"))
@@ -1701,12 +1616,7 @@ def _synthesize_interleaved_trace(hardware, model, config, tp_size, pp_size, loc
 
 # Wrapper function that creates trace for an instance
 def _host_transfer_rows(batch, rows):
-    """Explicit serialized DMA duration using measured per-rank link bytes/s.
-
-    The first row carries the original input load, so the converter still
-    loads the prompt once and all subsequent compute depends on the copy.
-    This deliberately does not claim native InferCept's layerwise overlap.
-    """
+   
     size = batch.load + batch.evict + batch.host_store_bytes
     if size == 0:
         return rows

@@ -1,15 +1,4 @@
-"""The interface a KV decision is applied through, and a test double.
 
-`RetentionExecutor` types against `KVControl` and never against a particular
-engine: that is what lets the same executor drive a simulator plane and a live
-vLLM. The implementations that actually talk to a running engine are not here
--- they are transport, and transport belongs next to the thing it reaches
-(`bench/core/kv_control.py`).
-
-`RecordingKVControl` stays because it is not a transport: it reaches nothing,
-records what it was asked to do, and exists so a policy's decisions can be
-asserted without an engine at all.
-"""
 from typing import Any, Optional
 
 

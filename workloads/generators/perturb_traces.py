@@ -1,31 +1,5 @@
 #!/usr/bin/env python3
-"""Derive perturbed agentic traces from existing sub_requests JSONLs.
-
-Operating-point sweep support (docs/iclr-impact-sweep.md): take validated
-traces and manufacture the preconditions for policy impact one knob at a
-time, keeping token ids and per-turn shapes intact so the derived trace
-stays grounded in the real workload.
-
-Operations (composable, applied in this order):
-  1. prefix selection      --source path[:N] (repeatable; first N programs)
-  2. gap scaling           --gap-scale F     (tool_duration_ns *= F)
-  3. tail amplification    --tail-amplify F --tail-quantile Q
-                           (gaps strictly above the pooled Q-quantile of
-                            positive gaps get *= F; the rest untouched)
-  4. arrival redraw        --jps X --seed S  (seeded shuffle of the merged
-                            program list, then Poisson arrivals; required
-                            when >1 source, optional otherwise -- without
-                            it embedded arrival_time_ns are kept)
-
-With >1 source, session_ids get a per-source prefix (basename-derived)
-unless they already carry one, mirroring workloads/mixed naming.
-
-Example (mixture 1:4 at JPS 0.1):
-  python workloads/generators/perturb_traces.py \
-    --source workloads/swebench/swebench_jps0.1_n50.jsonl:10 \
-    --source workloads/bfcl_v4/bfcl_jps0.1_n185.jsonl:40 \
-    --jps 0.1 --seed 42 --out /orange/.../mix1to4_jps0.1.jsonl
-"""
+"""Derive perturbed agentic traces from existing sub_requests JSONLs."""
 
 from __future__ import annotations
 

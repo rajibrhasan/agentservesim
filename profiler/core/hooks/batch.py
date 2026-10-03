@@ -1,25 +1,4 @@
-"""Synthetic batch construction for profiling shots.
-
-A ``Shot`` is one unit of work we hand to the vLLM worker: a list of
-(new_tokens, history) pairs describing the shape of every request in a
-synthetic batch, plus optional MoE routing hints. A ``Shot`` is
-serialized to a plain dict for cross-process transport (via
-``llm.collective_rpc``) and rehydrated inside the worker.
-
-``assemble_scheduler_output`` turns a ``Shot`` into a fully-formed
-``SchedulerOutput`` that vLLM's ``model_runner.execute_model`` can
-consume. We bypass the vLLM scheduler entirely so that the shapes of
-the requests are exactly what the grid generators asked for — no
-risk of the scheduler splitting, chunking, or reordering.
-
-Key trick: setting ``num_computed_tokens = history`` tells vLLM
-"pretend the first `history` tokens are already computed and their KV
-is in the cache". Combined with ``prompt_token_ids = [1] * (new_tokens
-+ history)`` this gives the engine a request that attends to
-``history`` preloaded tokens while newly computing ``new_tokens``.
-Exactly the shape needed to sweep attention at arbitrary
-(prefill_chunk, kv_cache) configurations.
-"""
+"""Synthetic batch construction for profiling shots."""
 
 from __future__ import annotations
 

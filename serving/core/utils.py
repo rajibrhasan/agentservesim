@@ -5,9 +5,7 @@ import json
 from .run_paths import input_path
 
 
-# Formatting string for a trace file's per-layer row. Kept in this
-# module because trace writers live across the codebase and import it
-# as the canonical row template.
+
 _FMT = (
     "{:<30}"  # Layername
     "{:<15}"  # comp_time

@@ -1,28 +1,3 @@
-"""SAGA's workflow-aware LRU on the simulator's prefix cache.
-
-The ranking is `policies.saga_runtime.eviction_order` -- Equation 6 of
-arXiv:2605.00528v2, the same function `bench/core/saga_engine.py` calls -- so
-the simulator reclaims by SAGA's score (0.3 recency + 0.5 improbability of
-reuse + 0.2 relative size) instead of the tree's plain LRU.
-
-What this executor supplies is the observation half. SAGA's score needs, per
-resident session, when it was last touched, how many bytes it holds, and how
-likely its context is to be reused. The first two the radix tree knows. The
-third the paper gets from workflow structure; here it is **estimated from
-observed history only**:
-
-- reuse probability: among sessions that have completed k turns, the fraction
-  observed to have started a (k+1)-th. An aggregate survival statistic over
-  turns already seen, never a look-ahead into the trace's remaining
-  sub-requests -- that would be clairvoyance, and it would make this number
-  meaningless as a policy input.
-- overlap: the running mean prefix-hit ratio actually measured on arriving
-  successor turns.
-
-Before any successor has been observed the estimator has nothing to say, and
-says so: `eviction_order` is not called and the tree's LRU stands. A policy
-that invented a prior here would be scoring its own guess.
-"""
 from policies.saga_runtime import CacheObservation, Successor, eviction_order
 
 NS = 1e9

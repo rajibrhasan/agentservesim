@@ -1,18 +1,3 @@
-"""Did the policy a run claims to have executed actually do anything?
-
-Split out of evolve/simrun.py on 2026-09-12.
-
-A policy whose defining event never fired produced a number for some OTHER
-policy -- the engine default -- and that number is indistinguishable from a
-good one by inspection. `mechanism_check` refuses such a run rather than
-returning its JCT. The faithful-Continuum leaderboard results (Sep 2026) were
-exactly this failure: release-at-admission never fired on session traces, and
-every number looked plausible.
-
-This is the simulator-side twin of the arena's own `mechanism_check`; the two
-guard the same thing at different distances from the run.
-"""
-
 import ast
 import csv
 import json

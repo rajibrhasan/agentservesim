@@ -1,10 +1,4 @@
-"""Chunked InferCept residency using vLLM's authoritative physical allocator.
 
-The scheduler keeps transferring requests out of runnable queues. Source GPU
-references survive until all-rank acknowledgement; incoming blocks are not
-published in the prefix index until then. CPU staging belongs to the connector
-and is excluded from this class's allocatable CPU capacity.
-"""
 from collections import Counter, deque
 from dataclasses import dataclass, field
 

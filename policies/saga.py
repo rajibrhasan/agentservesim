@@ -1,12 +1,4 @@
-"""SAGA (arXiv:2605.00528).
 
-Two halves, and until the files were cut by paper only one was reachable: a TTL
-that shrinks as the pool fills, and an affinity rule that returns a program to
-the instance holding its context with a capacity fallback. The routing half sat
-in the old `routing.py` as `SessionAffinityRouting`, unassociated with SAGA,
-while the arena recorded its absence as a mirror_gap. It was not missing; it
-was unlabelled.
-"""
 import math
 from statistics import NormalDist
 from typing import Optional
@@ -136,15 +128,8 @@ class SagaToolTTL(SagaKV):
 
 class SagaRouting(RoutingPolicy):
     """Follow the instance that already holds the program's context
-    (pcb.kv_instance), least-loaded on first contact, capacity fallback
-    (re-pin) when that instance is at or above capacity_limit in-flight
-    turns.
-
-    The pin is not private policy state: it IS the KV residency field of
-    the record, written back by the executor at turn release. Reading it
-    from the PCB is what lets the simulator mirror reproduce the same
-    placement without a second copy of the mapping.
-    """
+    (pcb.kv_instance), least-loaded on first contact, capacity fallback (re-pin)
+    when that instance is at or above capacity_limit in-flight turns."""
 
     @classmethod
     def from_config(cls, cfg):

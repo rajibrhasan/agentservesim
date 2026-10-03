@@ -1,43 +1,4 @@
-"""Program-aware placement.
 
-The old router decides where a REQUEST goes, from instance load. This plane
-decides where a PROGRAM's turn goes, and the difference is the whole point: a
-program's KV lives on one instance, so placing its next turn anywhere else
-throws that context away and pays a full reprefill for a decision that looked
-free at the time.
-
-Scope: placement, and nothing else. Turn release is not here -- when a
-program's next turn becomes runnable is a fact about the program, so the
-orchestrator owns it -- and neither is trace ingestion, which is
-`program_workload`, nor metrics, which are the orchestrator's because it is the
-thing that sees completions. The old router did all four, and three of them
-made it a second owner of program lifecycle: the same shadow-plane pattern this
-design exists to remove, one level up.
-
-So the split is: `program_workload.load_programs` reads the trace into the
-orchestrator, `orchestrator.due(now)` says what is runnable, `route` says where
-it goes, and `dispatch` puts the two together.
-
-The invariant this plane maintains
-----------------------------------
-`program_kv` assumes a program's live context sits on exactly one instance --
-without it a footprint is a vector over instances and every per-instance
-pressure decision about a program is ill-posed. Routing is where that invariant
-is kept or broken, because routing is the only thing that can move a program.
-
-So a placement that moves a program with live context is not an ordinary
-choice: it is an invariant break, it costs the program its cached prefix, and
-it is counted (`affinity_breaks`) rather than passed over in silence. A policy
-may still ask for it -- load can justify the cost -- but the cost is recorded.
-
-What a policy gets
-------------------
-`route_fn(program_state, candidates, now) -> instance | None`, where candidates
-carry per-instance load and pressure. Returning None means "no opinion" and the
-engine's default runs: affinity first, then least loaded. Declining is safe and
-an exception is treated as declining, because under policy search candidates
-misbehave and a bad one should cost a fallback rather than a run.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -48,13 +9,7 @@ from .program_orchestrator import ProgramOrchestrator
 
 @dataclass(frozen=True)
 class InstanceView:
-    """What a routing policy may read about one instance.
-
-    Deliberately small, and deliberately not the instance object: a policy that
-    could reach into a scheduler would be reading engine internals that the real
-    gateway has no access to, and a decision it could not reproduce there is not
-    a decision the benchmark can score.
-    """
+   
 
     instance: int
     programs: int          # programs whose live context is here
@@ -65,13 +20,6 @@ class InstanceView:
 
     @property
     def load_score(self) -> float:
-        """vLLM-style weighted load, exactly as the old router computes it:
-        waiting counts four times a running turn, normalised by capacity.
-
-        Copied rather than improved. A router that scored differently under the
-        same flag name would change every multi-instance result while the flag
-        said nothing had changed.
-        """
         raw = self.waiting * 4 + self.running
         return raw / self.capacity if self.capacity not in (0, float("inf")) else raw
 
@@ -139,15 +87,7 @@ class ProgramRouter:
 
     def route(self, program_id: str, now: float,
               only: Optional[Sequence[int]] = None) -> int:
-        """Where this program's next turn should run.
-
-        `only` narrows the candidates to a subset of instance ids -- the decode
-        half of a prefill/decode split, say. Narrowing here rather than at the
-        call site is what keeps ONE index space: a caller that filtered its own
-        list would then be holding positions in that list while every other
-        plane holds instance ids, and the two agree right up until the cluster
-        is heterogeneous.
-        """
+        """Where this program's next turn should run."""
         self.counters["routes"] += 1
         views = self.views()
         if only is not None:
@@ -285,19 +225,7 @@ def dispatch(router: "ProgramRouter", schedulers: Sequence, now: float,
 
 def transfer_prefill(router: "ProgramRouter", requests: Sequence,
                      schedulers: Sequence) -> int:
-    """Hand prefill-finished requests to a decode instance.
-
-    Prefill/decode split: a request that finished prefill on one instance
-    continues decoding on another, carrying its KV with it. Placement is the
-    router's, so it goes through `route` and lands in the orchestrator like any
-    other -- otherwise the program's live instance would be a lie the moment a
-    request moved.
-
-    Takes the FULL scheduler list and narrows by pd_type here. Handing it a
-    pre-filtered decode list would make the returned instance a position in
-    that list while `place` recorded it as an instance id, and on any cluster
-    where the decode instances are not 0..n the two would silently disagree.
-    """
+   
     decode_ids = [i for i, s in enumerate(schedulers) if s.pd_type == "decode"]
     if not decode_ids:
         decode_ids = list(range(len(schedulers)))

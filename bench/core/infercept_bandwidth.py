@@ -1,8 +1,4 @@
-"""Measure the host link that InferCept's swap budget is sized from.
 
-The budget converts a forward-pass duration into blocks that can move behind
-it, so the rate must come from the node that runs, not from a device table.
-"""
 
 
 def measure_host_bandwidth_bytes_s(device=0, nbytes=64 << 20, iters=10, barrier=None):

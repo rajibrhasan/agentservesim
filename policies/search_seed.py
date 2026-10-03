@@ -1,8 +1,4 @@
-"""Initial policy from joint search 41008503, generation zero.
 
-Restored from program 60b6ab54-1f6d-4dee-b182-85fb8ba85198.
-Decision code is unchanged; imports use the shared policy bases.
-"""
 from .base import RetentionPolicy, SchedulingPolicy
 
 # EVOLVE-BLOCK-START

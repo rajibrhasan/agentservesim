@@ -1,104 +1,23 @@
-"""Simulator-side mirror of the unified serving policy (retention,
-scheduling, routing).
 
-The mirror imports the SAME policy classes the real harness runs
-(agentservesim/harness: retention.py, scheduling.py, routing.py,
-waste_model.py) and drives them from simulator events, so the decision
-logic is shared by construction. Decisions are applied through the
-simulator's native mechanisms:
-
-- retention: a completed turn's cached prefix is parked by holding a
-  radix lock (inc_lock_ref on the request's last node) until release,
-  expiry, or the safety valve. The valve mirrors the engine mechanism
-  (vllm agent-knobs branch): when evict_prefix_cache cannot free
-  enough, protections are broken expired-first, then
-  latest-deadline-first, with counters.
-- scheduling: the harness stamp becomes Request.priority; the
-  scheduler's waiting queue orders by (priority, arrival, id) when the
-  policy is priority-based (mirror of vLLM's PriorityRequestQueue).
-- routing: the Router delegates instance selection per request to the
-  shared RoutingExecutor.
-
-Each knob appends the same JSONL decision log the real harness writes;
-harness/parity.py compares the two logs (Phase B decision parity).
-
-Events (wired in router.py / __main__.py):
-- turn routed  -> routing decision, priority stamp, retention
-  turn_arrival (releases the previous turn's protection)
-- turn complete -> retention turn_complete (protect/evict/none),
-  PLAS service accounting, routing in-flight decrement
-
-Time: simulator ns are converted to float seconds for the shared
-policy code; deadlines are stored back in ns.
-"""
 
 import os
 import json
 import sys
 
-# Default "vllm": match vLLM's kv_cache_usage, where cached-evictable blocks sit
-# in the free queue and count as FREE (upstream v0.19.0 behaviour, verified by
-# `git diff v0.19.0 -- vllm/v1/core/block_pool.py`). Parked/pinned KV stays USED
-# on purpose: both the gate and the retention policies need a mostly-pinned pool
-# to read as full. "sim" (the previous default) counted evictable as used, which
-# the gate's own check already adds back explicitly -- double counting.
+
 _KV_UTIL_SEMANTICS = os.environ.get("SIM_KV_UTIL_SEMANTICS", "vllm")
-# SIM_GATE_PREFIX_PROBE=1 (NOT the default; see below): the gate sees the live
-# prefix-cache hit of each waiting turn (vLLM looks computed blocks up at
-# schedule time). 0 reproduces the pre-2026-09-06 behaviour, where a turn
-# never scheduled reported cached_tokens=0 to the gate (prefix_match only
-# ran after admission), so the gate tested the full prompt against
-# free+evictable.
-# The setting must match WHERE the gate runs, and there is no single right
-# default. A gateway-site gate cannot know the prefix hit before submission
-# (bench/core/policy_driver.py::_queue_view passes cached_tokens=0), so 0 mirrors
-# it; an engine-site gate (GATE_SITE=engine GATE_CACHED_TOKENS=live) does know it
-# and needs 1. Measured 2026-09-12 on B200·SWE50: live probe 875.23 vs cached=0
-# 887.24 (real 729.34) -- ~1% either way there.
-#
-# CORRECTION 2026-09-15, default flipped to 1. The old comment justified 0 with
-# "every board leg ran at gate_site=gateway", which is false -- the board gate
-# leg (rtx6000_70b_swebench_gate__jps0.02_engine_pinrel/gate) ran ENGINE-side:
-# 235,745 admission holds sit in the engine's kv_protection_stats and 0 in the
-# gateway driver's, and it wrote decisions/engine_admission.jsonl.
-#
-# More to the point, THIS gate is engine-side by construction. filter_waiting is
-# called from Scheduler.schedule (scheduler.py ~405), the same position as the
-# engine's own gate (vllm/v1/core/sched/admission_gate.py), which reads the hit
-# live via kvm.get_computed_blocks unless GATE_CACHED_TOKENS=zero. With the
-# probe on, every QueueView field matches that gate: n_running, n_waiting,
-# kv_free_tokens (free_uncached), kv_evictable_tokens (cached_free) and
-# cached_tokens. Defaulting to 0 made the simulator mirror the GATEWAY driver's
-# view (bench/core/policy_driver.py::_queue_view, which cannot probe before
-# submission and passes 0) -- a different deployment from the one in the loop.
-# Set 0 deliberately to model a gateway-site gate.
+
 _GATE_PREFIX_PROBE = os.environ.get("SIM_GATE_PREFIX_PROBE", "1") != "0"
 
 
 def _default_harness_root():
-    """Where `harness/` lives when nobody passes --harness-root.
-
-    The repo root. It used to be a sibling `agentservesim/` checkout, and that
-    stopped being true when the trees were split: agentservesim is documents
-    now and carries no code. Every real caller passes the flag explicitly
-    (runtime/invoke.py: `--harness-root /app/LLMServingSim`), so the stale
-    default only ever bit a bare invocation -- which is exactly the case a
-    default is for.
-    """
+    
     return os.path.dirname(os.path.dirname(os.path.dirname(
         os.path.abspath(__file__))))
 
 
 def _require_tau(tau_s, name):
-    """A TTL-family window the caller must choose.
-
-    `ttl` and `saga-ttl` have no intrinsic window -- TTLRetention takes tau_s
-    with no default -- so an omitted value used to fall through to the CLI's
-    60.0, a figure no paper or measurement supports. That is how SAGA ran at 60
-    against a real leg at 2 and the gap read as a fidelity problem for most of a
-    day. Failing here costs a second; running the wrong policy costs an hour and
-    looks like a result.
-    """
+   
     if tau_s is None:
         raise ValueError(
             f"--retention {name} needs --retention-tau: it has no default window. "
@@ -107,16 +26,7 @@ def _require_tau(tau_s, name):
 
 
 def _spec_or_raise(axis, value, flag, _cache=None, **cfg_kw):
-    """A `module:Class` policy on an axis flag, or a clear refusal.
-
-    ONE instance per spec. When the same `module:Class` is named on two axes,
-    both get the same object -- so a policy that decides retention AND
-    scheduling from one piece of state can run HERE, on the plane the
-    published numbers were produced on, instead of being pushed to
-    `--planes program` for the sake of sharing state. Two instances of one
-    class coordinating through module globals is what this avoids, and it is
-    what the old joint seed had to do.
-    """
+   
     from .program_policy_adapter import load_unified
     from policies.base import PolicyConfig
     if ":" not in (value or ""):
@@ -170,9 +80,7 @@ def import_harness(harness_root=None):
     return policies, policies, policies, waste_model, program
 
 
-# Deadline for protections held through the queue wait (release_event ==
-# "scheduled"): far future so the valve's expired-first pass skips them
-# and the unexpired latest-deadline-first pass breaks them first.
+
 _HOLD_SENTINEL_NS = 1 << 62
 
 
@@ -338,20 +246,11 @@ class UnifiedPolicyAdapter:
         elif scheduling_value == "continuum":
             spolicy = s.ContinuumScheduling()
         elif scheduling_value == "evolved":
-            # Search candidate: the harness at --harness-root carries an
-            # EvolvedScheduling class (agentservesim/evolve). It stamps a
-            # priority from the same PCB the published values see. Joint
-            # candidates define both classes in one module, imported by
-            # shims; the attribute can then be missing from the module
-            # object while the shim imports cleanly on a second attempt.
+          
             spolicy = self._evolved_class(s, "harness.evolved_scheduling",
                                           "EvolvedScheduling")()
         elif scheduling_value == "autellix-mlfq":
-            # Autellix Algorithm 1 itself, driven per instance by
-            # serving/core/autellix_driver.py. The policy object stamps
-            # nothing: ordering is the planner's output, applied in
-            # filter_waiting, so the waiting queue is not re-sorted
-            # behind it.
+        
             from .autellix_driver import queue_config
             if autellix_queues is None:
                 queue_config(None, None, None)   # raises with the flag list
@@ -660,12 +559,11 @@ class UnifiedPolicyAdapter:
             for swap in self._host_swaps.values():
                 swap.cancel(previous_copy)
         if self._release_at_scheduled:
-            # Queue-persistent protection: hold through the queue wait.
-            # The parked entry's deadline moves to the hold sentinel so the
-            # pressure valve treats it as unexpired and breaks it
-            # latest-deadline-first — mirroring the released code, which
-            # breaks the pin with the most remaining TTL first and never
-            # expires a pin whose next turn is waiting.
+            # Queue-persistent protection: hold through the queue wait. The parked
+            # entry's deadline moves to the hold sentinel so the pressure valve treats
+            # it as unexpired and breaks it latest-deadline-first — mirroring the
+            # released code, which breaks the pin with the most remaining TTL first and
+            # never expires a pin whose next turn is waiting.
             tag = self.programs.get(program_id).kv_request_id
             entry = self._parked.get(tag) if tag is not None else None
             if entry is not None:
@@ -792,13 +690,12 @@ class UnifiedPolicyAdapter:
                     cap = int(sched.long_prefill_token_threshold)
                     if 0 < cap < want:
                         want = cap
-                    # Chunked prefill: this step takes what is left of the
-                    # budget, not the whole remaining prompt. Demanding the
-                    # whole prompt fit made every prefill longer than
-                    # max_num_batched_tokens permanently infeasible, so the
-                    # planner selected nothing and the engine deadlocked with
-                    # a full-but-evictable pool (job 42596388, 16.7k-token
-                    # SWE-bench prompts against a 16,384 budget).
+                    # Chunked prefill: this step takes what is left of the budget, not
+                    # the whole remaining prompt. Demanding the whole prompt fit made
+                    # every prefill longer than max_num_batched_tokens permanently
+                    # infeasible, so the planner selected nothing and the engine
+                    # deadlocked with a full-but-evictable pool (job 42596388,
+                    # 16.7k-token SWE-bench prompts against a 16,384 budget).
                     want = min(want, budget - spent)
                 else:
                     want = 1 if budget - spent > 0 else 0
@@ -844,24 +741,10 @@ class UnifiedPolicyAdapter:
             return
         self._autellix_driver(memory).drop(req_id, self._s(now_ns))
 
-    #: Preemptions the plan may force per scheduling tick. The runtime states
-    #: that it "does not substitute recomputation for required swapping", and
-    #: the simulator's only preemption IS recomputation, so applying every
-    #: plan.preempt each tick livelocks: a resident the plan did not select is
-    #: preempted, re-admitted, and preempted again (job 42631045: 13,468
-    #: preemptions on 50 programs, against 1,254 before). A quantum yield is
-    #: one call stepping aside for a better-placed waiter, so bound it at that.
     _PLAN_PREEMPTS_PER_TICK = 1
 
     def apply_scheduling_plan(self, sched, running, now_ns):
-        """Enforce quantum yields before native running-first admission.
-
-        Only a resident the plan dropped *and* whose MLFQ queue is worse than
-        some waiting call's yields: that is the paper's rule, a call giving way
-        when its quantum has expired and better-placed work is queued. A
-        resident the plan merely could not fit this step keeps its KV and waits
-        its turn, because preempting it here costs a full re-prefill.
-        """
+       
         if self.scheduling_value != "autellix-mlfq":
             return running
         driver = self._autellix_driver(sched.memory)
@@ -1103,17 +986,7 @@ class UnifiedPolicyAdapter:
             self.routing_exec.turn_complete(instance)
         if program_id is None:
             return
-        # PLAS: attained service = first schedule -> last token, i.e.
-        # PREFILL + DECODE. This must mirror the real driver exactly
-        # (bench/core/runner.py: `service_s = max(0.0, lt - st)` with
-        # lt=last_token_ts, st=scheduled_ts).
-        #
-        # It previously used `latency - queuing_delay`, which is NOT that:
-        # `set_que_delay` is re-called on every prefill chunk while `is_init`
-        # holds, so queuing_delay measures arrival -> LAST CHUNK, and the
-        # difference collapses to decode time with prefill excluded. Since
-        # prefill scales with prompt size, that under-charged exactly the
-        # large-prompt programs PLAS is meant to deprioritize.
+       
         if req_obj.end_time >= 0 and req_obj.first_sched_ts >= 0:
             service_s = max(0.0, (req_obj.end_time - req_obj.first_sched_ts) / 1e9)
         elif req_obj.latency >= 0 and req_obj.queuing_delay >= 0:
@@ -1284,17 +1157,7 @@ class UnifiedPolicyAdapter:
         self._host_swaps[id(memory)] = memory.host_swap
 
     def _swap_queue_limit(self, memory):
-        """Tokens the swap queue may hold before a victim recomputes instead.
-
-        A queued copy owns its source chain until its last chunk lands, so
-        those tokens are unreclaimable. The bound is therefore whatever the
-        pool has *beyond* what the engine needs to keep scheduling: one full
-        token budget plus a block for every sequence slot, which is the most
-        a single step can newly allocate. Derived from the engine's own
-        limits rather than a fraction picked by hand, because this cap
-        silently turns swaps into recomputes -- the thing --autellix-swap
-        exists to avoid -- so it must bind as rarely as the deadlock allows.
-        """
+        """Tokens the swap queue may hold before a victim recomputes instead."""
         pool = max(1, (memory.npu_mem - memory.weight)
                    // max(1, memory._bytes_per_token))
         sched = None
@@ -1315,23 +1178,7 @@ class UnifiedPolicyAdapter:
         return max(0, pool - headroom)
 
     def _autellix_swap_out(self, req, now_ns):
-        """Autellix preempts to host memory, not to recomputation.
-
-        Called while the victim still has its computed tokens: the scheduler
-        resets them immediately afterwards. The copy owns the source chain
-        until it lands, so the successor restores instead of re-prefilling.
-
-        That ownership is the catch. In this radix host-copy model the source
-        stays *resident and locked* until its last chunk is transferred, so
-        queueing faster than the link drains walks the pool to fully locked
-        and the engine deadlocks with nothing evictable (job 42610546:
-        115,824 tokens locked, 0 evictable, `valve_fail`). Real Autellix does
-        not have this problem because a swapped-out call's pages are released
-        as they move. Here the queue is bounded instead: once locking this
-        chain would leave less than a couple of batches' worth evictable, the
-        victim is preempted by recomputation, which is what would have
-        happened without swapping at all.
-        """
+      
         if not self.autellix_swap:
             return
         memory = self._last_memory

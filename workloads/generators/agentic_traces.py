@@ -47,15 +47,10 @@ def convert_program(obj: dict, streaming: bool = False) -> dict:
                              'regenerate from original tool messages')
         ids = t["stream_delta_tok_ids"] if streaming else t["input_tok_ids"]
         tool_ms = int(t.get("tool_ms", 0)) if i < n - 1 else 0
-        # Fix output_toks=0 turns (ported from the old make_e5_traces.py).
-        # Those are tool-call turns where the collection model returned
-        # tool_calls instead of free-form text; the retokenizer only counts
-        # message["content"] so the count comes out 0 even though 100-250
-        # tokens were emitted. Fall back to collection_output_toks (the
-        # collection model's own count; minor tokenizer drift but far
-        # closer than clamp-to-1), capped at 2048 to neutralize corrupted
-        # upstream counts (~60-82k on runaway turns) that would otherwise
-        # trigger vLLM max-model-len rejections.
+        # Fix output_toks=0 turns (ported from the old make_e5_traces.py). Those are
+        # tool-call turns where the collection model returned tool_calls instead of
+        # free-form text; the retokenizer only counts message["content"] so the count
+        # comes out 0 even though 100-250 tokens were emitted.
         out_toks = int(t["output_toks"])
         if out_toks < 1:
             fallback = int(t.get("collection_output_toks", 0))

@@ -34,27 +34,7 @@ from pyinstrument import Profiler
 
 
 def _pad_batch_to_max(batch, max_len):
-    """Pad a batch up to ``max_len`` for DP-sync.
-
-    Mirrors vLLM's CUDA-graph DP padding: every DP rank's forward runs at
-    ``max(num_tokens_across_dp)``. We bump the high-level counters so
-    dense layers, lm_head, and the MoE compute path all reflect the
-    padded shape — but we deliberately leave ``decode_k_list`` /
-    prefill lists untouched so attention continues to see only the real
-    decodes. FlashAttention's varlen kernel gives padded ``seq_len=0``
-    entries zero compute in real vLLM, and extending ``decode_k_list``
-    with ``kv=1`` dummies would instead collapse ``kv_decode_mean``
-    toward 1 and push the attention lookup far outside the profiled
-    sweep.
-
-    MoE AG/RS comm size is anchored separately to ``max_total_len`` (no
-    ``× group_size``) in the iteration loop — that calibrates the
-    bandwidth model against the same ``link_bw`` AllReduce already uses.
-
-    Request-completion accounting (`scheduler.add_done`) reads
-    ``batch.requests`` and ``batch.end``, not these mutated token-list
-    fields, so it is unaffected.
-    """
+    """Pad a batch up to ``max_len`` for DP-sync."""
     pad = max_len - batch.total_len
     if pad <= 0:
         return
@@ -1047,13 +1027,10 @@ def main():
     # Pre-generated workloads ready to submit on next "Waiting"
     dp_ready_workloads = {}  # instance_id -> workload_path
 
-    # Agentic idle-gap handling. When every instance is drained but a deferred
-    # sub-request will only arrive in the future (a tool call is in flight),
-    # ASTRA-Sim has no event to advance: poking it with "pass" deadlocks (it
-    # blocks reading our stdin while we block reading its stdout). Instead we
-    # fast-forward wall-clock time in Python (skip_read: do not read the backend
-    # that iteration) and remember how much idle time we skipped (idle_offset),
-    # because ASTRA-Sim's cycle counter only advances on actual compute.
+    # Agentic idle-gap handling. When every instance is drained but a deferred sub-
+    # request will only arrive in the future (a tool call is in flight), ASTRA-Sim has
+    # no event to advance: poking it with "pass" deadlocks (it blocks reading our stdin
+    # while we block reading its stdout).
     skip_read = False
     idle_offset = 0
     idle_sweep = IdleScheduleSweep()
@@ -1161,15 +1138,10 @@ def main():
                     max_total_len = max(b.total_len for b, _ in dp_pending[dg].values())
                     for b, _ in dp_pending[dg].values():
                         _pad_batch_to_max(b, max_total_len)
-                    # MoE AG/RS comm size is anchored to ``max_total_len``
-                    # (not ``max × group_size``). The trace generator divides
-                    # this by ep_total internally for the per-rank AG chunk
-                    # and uses the same value for the RS pre-scatter buffer.
-                    # Empirically this matches real NCCL AG/RS bandwidth on
-                    # PCIe 5.0 at the same ``link_bw`` that already calibrates
-                    # AllReduce — i.e. ASTRA-Sim's Ring half-duplex model
-                    # ends up correct for AR but 2× over real AG/RS, and the
-                    # "× group_size" we used previously stacked the two errors.
+                    # MoE AG/RS comm size is anchored to ``max_total_len`` (not ``max ×
+                    # group_size``). The trace generator divides this by ep_total
+                    # internally for the per-rank AG chunk and uses the same value for
+                    # the RS pre-scatter buffer.
                     sum_total_len = max_total_len
 
                     # Shared workload folder for all DP members
@@ -1500,24 +1472,11 @@ def main():
                 break
             controller.write_flush(p, "done") # make done instances to sleep
         elif new_req == None and not responded:
-            # This instance has no runnable batch. If the WHOLE system is idle
-            # (every instance drained, nothing in flight) but a pending request
-            # will arrive in the future (an agentic tool call is still running),
-            # fast-forward wall-clock time in PYTHON rather than driving
-            # ASTRA-Sim: the backend has no event to advance, so a "pass" would
-            # deadlock (mutual pipe_read). Jump to the next arrival, bank the
-            # skipped time into idle_offset, pull the arrival in, and re-schedule
-            # WITHOUT reading the backend (skip_read) — the next pass through the
-            # loop hands ASTRA-Sim a real workload.
-            # Only the instance's start NPU may fast-forward: a new batch is
-            # created only when schedule() is called with sys == start NPU,
-            # so fast-forwarding on a non-start NPU (tp/pp > 1) would find no
-            # batch on the re-scheduling pass and jump again, arrival after
-            # arrival, until the pending list is exhausted (the first batch
-            # then formed only once the LAST program had arrived). ASTRA-Sim
-            # polls end NPUs before start NPUs each round and re-polls a
-            # passed NPU next round, so "pass" here is safe: the start NPU's
-            # report follows, fast-forwards, and forms the batch.
+            # This instance has no runnable batch. If the WHOLE system is idle (every
+            # instance drained, nothing in flight) but a pending request will arrive in
+            # the future (an agentic tool call is still running), fast-forward wall-
+            # clock time in PYTHON rather than driving ASTRA-Sim: the backend has no
+            # event to advance, so a "pass" would deadlock (mutual pipe_read).
             system_idle = all(len(schedulers[i].inflight) == 0 for i in range(num_instances))
             next_arrival = plane_next_arrival()
             swap_wakeups = []
@@ -1744,12 +1703,10 @@ def main():
         print_markup(f"Workflow throughput (workflows/s):                                  {wf['workflow_throughput_per_s']:.3f}")
         print_rule()
 
-    # Important informations about metrics
-    # The TTFT (Time to First Token) in our simulator differs from vllm. 
-    # While vllm measures TTFT as the time when the client receives the first token,
-    # Our simulator measures it as the time when the computation of the first token is completed.
-    # Therefore, vllm gets much more higher TTFT.
-    # (Ref: https://docs.vllm.ai/en/latest/design/metrics.html?utm_source=chatgpt.com#interval-calculations-vs-preemptions)
+    # Important informations about metrics The TTFT (Time to First Token) in our
+    # simulator differs from vllm. While vllm measures TTFT as the time when the client
+    # receives the first token, Our simulator measures it as the time when the
+    # computation of the first token is completed.
 
     if output_file != None:
         print(f"Saving each request's information to output file: {output_file}")

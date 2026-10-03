@@ -1,14 +1,4 @@
-"""Bench output writer.
 
-Writes the three artifacts of a bench run::
-
-    bench/results/<run_id>/meta.json
-    bench/results/<run_id>/requests.jsonl
-    bench/results/<run_id>/timeseries.csv
-
-Schema lives here so both runner.py (writer) and validate.py (reader) stay
-consistent without a separate JSON schema file.
-"""
 
 from __future__ import annotations
 
@@ -28,19 +18,7 @@ def write_meta(output_dir: Path, **fields: Any) -> None:
 
 
 def write_requests(output_dir: Path, records: list[dict]) -> None:
-    """Write requests.jsonl. Each record::
-
-        {
-          "request_id": str,
-          "input_toks": int,
-          "output_toks": int,
-          "arrival_time": float,    # absolute epoch seconds
-          "queued_ts": float,
-          "scheduled_ts": float,
-          "first_token_ts": float,
-          "last_token_ts": float
-        }
-    """
+    """Write requests.jsonl. Each record::"""
     with (output_dir / "requests.jsonl").open("w") as f:
         for r in records:
             f.write(json.dumps(r) + "\n")

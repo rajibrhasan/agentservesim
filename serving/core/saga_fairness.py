@@ -1,21 +1,3 @@
-"""SAGA's adaptive fair share (AFS) on the simulator.
-
-The calculation is `policies.saga_runtime.fair_shares`, Eqs. 8 and 9: each
-tenant's score is the sum over its programs of predicted remaining GPU work
-divided by slack to deadline, normalised across tenants.
-
-Two of the three inputs are not in the workload format. `tenant` and
-`deadline_ns` have to be on the session, and this refuses to run without them
-rather than inventing a single-tenant world or a deadline far enough away to
-make every share equal -- either would produce a number that looks like AFS
-and is not. `workloads/generators/` can emit both; a trace without them is a
-trace this policy cannot be evaluated on.
-
-The third input, predicted remaining GPU work, is estimated from observed
-history only: mean measured service per completed turn, times the mean number
-of further turns observed for programs that had reached this turn index.
-Reading the session's remaining sub-requests would be clairvoyance.
-"""
 from policies.saga_runtime import TaskEstimate, fair_shares
 
 NS = 1e9

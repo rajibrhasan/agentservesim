@@ -1,8 +1,4 @@
-"""Worker operations for the isolated vLLM policy engine.
 
-Transfers use vLLM's block-layout conversion and CUDA batch-copy implementation.
-All methods acknowledge only after the device has finished touching the buffers.
-"""
 
 
 class PolicyWorkerExtension:

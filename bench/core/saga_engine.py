@@ -1,21 +1,4 @@
-"""SAGA gateway for the bench replay: routing, stealing, WA-LRU order, AFS, prefetch.
 
-Every input is observed online: engine protection stats (which sessions are
-cached where, pool utilization), the gateway's own queues, completed tool
-gaps, observed program lengths and tool-result lengths. Trace lookahead
-(future tool durations, future turns, future outputs) is never read.
-
-Decision functions come from policies.saga_runtime; this module supplies the
-observations, applies the decisions, publishes the WA-LRU order to each
-engine's safety valve (kv_reclaim_order), and moves KV only through
-acknowledged transfers (SagaCoordinator). Retention (the per-tool TTL) stays
-with the retention policy the driver already runs.
-
-Port choices, all visible here: the AFS share bounds a tenant's in-flight
-calls at the gateway; SAGA's 500 ms preemption of a running low-share call
-needs active-call migration and is not implemented. Stealing moves calls
-held at the gateway (its queue), not calls already inside an engine.
-"""
 import asyncio
 import math
 from collections import deque

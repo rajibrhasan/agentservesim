@@ -1,28 +1,4 @@
-"""Simulator-side executor for Autellix's MLFQ scheduler.
 
-The decision logic is `policies.autellix_runtime.AutellixRuntime` -- the same
-object `bench/core/policy_engine.py` drives on real vLLM -- so the simulator
-runs Algorithm 1 of arXiv:2502.13965 itself rather than the attained-service
-approximation `--scheduling plas` provides: per-call quanta, demotion on
-quantum exhaustion, service inheritance across a program's turns, starvation
-promotion, and optional extra admission candidates. The simulator replans
-each batch; it does not implement the native adapter's N-step planning window.
-
-What this driver supplies is the engine half of that contract: cumulative
-batch feasibility against the simulator's own memory model and token budget,
-the actual batch membership, and the measured execution interval of every
-batch. One runtime per instance, because queues and clocks are per engine.
-
-Limits worth stating. The runtime assumes one batch in flight at a time, which
-holds only at `pp_size == 1` (`Scheduler.schedule_with_prefix` returns early
-once `len(inflight) >= pp_size`), so the driver refuses anything else. Calls
-the planner drops from the resident set yield before admission, even without
-memory pressure. Optional host copies preserve their full cached blocks;
-without them, or when the copy queue is full, they resume by recomputation.
-This remains an approximation of native physical-block swapping.
-Flat (non-program) requests are invisible to
-the runtime and keep the engine's own ordering.
-"""
 from policies.autellix_runtime import AutellixRuntime, QueueConfig
 
 
@@ -69,13 +45,7 @@ class AutellixDriver:
     # planning
     # ------------------------------------------------------------------
     def plan(self, waiting, running, pcb_of, now_s, fits):
-        """Return the waiting requests Algorithm 1 selects, in queue order.
-
-        `fits` is the read-only cumulative feasibility callback; it receives
-        the candidate Request and the Requests already selected. Requests the
-        runtime does not know (no program) are appended after the plan so the
-        engine's own order still applies to them.
-        """
+       
         by_id = {}
         for req in list(running) + list(waiting):
             pcb = pcb_of(req)
@@ -146,13 +116,7 @@ class AutellixDriver:
 
 
 def queue_config(service_boundaries_s, quanta_s, starvation_ratio):
-    """Build the queue configuration, refusing to invent the parameters.
-
-    Autellix publishes no transferable defaults for these, and the engine
-    adapter already treats them as explicit experiment inputs, so the
-    simulator does the same rather than making a number up and having a
-    later reader mistake it for the paper's.
-    """
+   
     if not service_boundaries_s or not quanta_s or starvation_ratio is None:
         raise ValueError(
             "--scheduling autellix-mlfq needs --autellix-service-boundaries, "

@@ -1,33 +1,4 @@
-"""Rich-backed logger for the simulator.
 
-All simulator output funnels through this module — log records, per-
-interval status dashboards, result summaries, and the startup banner.
-The public API (``configure_logger``, ``get_logger``, and the
-``ComponentLoggerAdapter`` returned by ``get_logger``) is preserved
-for every existing call site; the change is cosmetic (Rich colours,
-markup, and tracebacks) rather than structural.
-
-Line format kept from the original ANSI implementation:
-
-    [14:47:13.208] [Scheduler] [node=0,inst=1] INFO  iteration 0 finished
-
-- timestamp is ``HH:MM:SS.mmm`` by default (file-handler keeps the
-  full ``YYYY-MM-DD HH:MM:SS.mmm`` for offline log parsing);
-- component / node / instance are injected by the adapter;
-- level is styled by a shared Rich theme so file output stays plain.
-
-Extras:
-
-- ``is_summary=True`` on a log record emits the message verbatim
-  (no timestamp / prefix). Used for result summaries.
-- ``success()`` emits a green check-mark line at INFO level.
-- ``stage(title)`` / ``progress(label, total)`` context managers
-  surface long-running steps in a uniform way, mirroring the
-  profiler's helpers.
-- ``console`` / ``print_rule`` / ``print_banner`` expose Rich primitives
-  so callers can render panels and rules without reaching for ``rich``
-  directly.
-"""
 from __future__ import annotations
 
 import logging

@@ -127,15 +127,7 @@ class MemoryModel():
         # retention policy runs; consulted by evict_prefix_cache.
         self.kv_protection = None
     def get_weight(self):
-        """Per-GPU model weight in bytes.
-
-        Conservative upper bound across PP ranks: assumes a single rank
-        holds embedding + final_layernorm + lm_head along with its share
-        of transformer blocks (n_layer // pp_size). In real PP these
-        non-block weights live on the first/last rank only, so middle
-        ranks are lighter — but using the heaviest-rank value here keeps
-        the `weight > npu_mem` check safe.
-        """
+        """Per-GPU model weight in bytes."""
         tp = self.tp_size
         pp = max(self.pp_size, 1)
         ep = self.ep_size
@@ -233,24 +225,22 @@ class MemoryModel():
                 computed_before = req.num_computed_tokens
                 
                 total_after = computed_before + tokens_this_step
-                # A second-tier (CPU) prefix hit is counted as computed so the
-                # request skips its prefill, but those tokens are not on the
-                # NPU until the batch that loads them runs: the pages they
-                # occupy are materialized by this step and must be reserved
-                # (board job 42522214_5: restored tokens were never reserved,
-                # and the completing insert overflowed a full pool).
+                # A second-tier (CPU) prefix hit is counted as computed so the request
+                # skips its prefill, but those tokens are not on the NPU until the batch
+                # that loads them runs: the pages they occupy are materialized by this
+                # step and must be reserved (board job 42522214_5: restored tokens were
+                # never reserved, and the completing insert overflowed a full pool).
                 if (req.storage_cache_hit > req.npu_cache_hit
                         and not req.storage_restored):
                     computed_before = min(computed_before, req.npu_cache_hit)
                 
-                # Calculate blocks needed (cumulative)
-                # The prefix cache stores whole pages only (cache_unfinished_req
-                # inserts the page-aligned prefix), so the bytes this step will
-                # materialize are the pages completed by it: pages(after) minus
-                # pages already stored (floor), not minus ceil. Using ceil here
-                # under-reserved by one page whenever a chunk ended off-page
-                # (token budget minus decode tokens), and the completing insert
-                # then failed with a full pool.
+                # Calculate blocks needed (cumulative) The prefix cache stores whole
+                # pages only (cache_unfinished_req inserts the page-aligned prefix), so
+                # the bytes this step will materialize are the pages completed by it:
+                # pages(after) minus pages already stored (floor), not minus ceil. Using
+                # ceil here under-reserved by one page whenever a chunk ended off-page
+                # (token budget minus decode tokens), and the completing insert then
+                # failed with a full pool.
                 blocks_after = (total_after + self.block_size - 1) // self.block_size
                 blocks_before = computed_before // self.block_size
                 
@@ -904,20 +894,7 @@ class MemoryModel():
     
     @staticmethod
     def _match_key(req):
-        """The token ids a request presents to the prefix cache.
-
-        vLLM matches on the request's WHOLE current token sequence
-        (kv_cache_manager.get_computed_blocks hashes request.all_token_ids).
-        After a RECOMPUTE preemption that sequence is the original prompt plus
-        the tokens the request had generated -- blocks vLLM freed tail-first
-        but left hashed and re-hittable, so it rematches nearly all of them.
-
-        Keying on input_hash_ids alone capped the rematch at the ORIGINAL
-        prompt while _preempt_recompute had already grown original_input by
-        the generated count, so every preemption re-prefilled the generated
-        context from scratch. That inflated recomputation and, with it,
-        congestion and further preemptions.
-        """
+        """The token ids a request presents to the prefix cache."""
         ids = req.input_hash_ids
         if ids is None:
             return None
@@ -936,16 +913,7 @@ class MemoryModel():
             tokens[:max(0, req.original_input - 1)])
 
     def peek_storage_hit(self, req):
-        """Read-only second-tier prefix hit for a request that is not
-        scheduled yet.
-
-        The admission gate runs before STEP 1's prefix_match, so a waiting
-        request's storage_cache_hit is still its initial zero. Reading that
-        field in the gate made InferCept's FCFS restore a no-op that looked
-        like it was admitting everything (job 42596388: 1.3M blocks swapped,
-        zero restores gated). Same key and cap as prefix_match, and it
-        mutates nothing.
-        """
+        """Read-only second-tier prefix hit for a request that is not scheduled yet."""
         if (not self.enable_prefix_caching or req.input_hash_ids is None
                 or self.second_tier_prefix_cache is None):
             return 0

@@ -1,40 +1,8 @@
-"""Skew profiling — measures how FlashAttention kernel cost shifts when
-a decode batch has non-uniform kv distributions.
+"""Profile attention with heterogeneous decode KV lengths.
 
-Unlike the uniform attention grid (all decodes at the same kv), each
-skew case measures three latencies at the same operating point:
-
-    t_mean   — all decodes uniform at the batch's mean kv
-    t_max    — all decodes uniform at the batch's max kv
-    t_skew   — the actual skewed batch [nb × kv_big, (n-nb) × kvs]
-
-From these we can compute the normalized interpolation factor
-
-    alpha = (t_skew - t_mean) / (t_max - t_mean)    ∈ [0, 1]
-
-which the simulator uses at query time:
-
-    t_predicted = t_mean_lookup(batch.mean_kv) + alpha(batch.shape) ×
-                  (t_max_lookup(batch.max_kv) - t_mean_lookup(batch.mean_kv))
-
-Output: ``<variant>/tp<N>/skew.csv`` with per-case columns
-``regime, n, nb, ratio, skew, pc, kp, kvs, kv_big, kv_mean,
-t_mean_us, t_max_us, t_skew_us, alpha``.
-
-Downstream pipeline:
-
-  * ``fit_alpha`` reads each TP's skew.csv, derives bucket axes from
-    the observed (n, kv_big, kp) coverage (so widening the sweep
-    automatically lights up more resolution), and emits a 5-axis
-    weighted-LS fit.
-  * ``writer.persist_meta`` spills the fitted (bucket → alpha) table
-    to ``<variant>/tp<N>/skew_fit.csv`` and records only a per-TP
-    summary + the derived ``bucket_axes`` under
-    ``meta.yaml::skew_fit``.
-  * At query time the simulator reads ``bucket_axes`` from meta.yaml
-    and reconstructs the same bucket key for whatever runtime batch
-    it's evaluating.
-"""
+Each case measures uniform-mean, uniform-maximum, and bimodal KV batches.
+These measurements determine the simulator's skew correction. Factorial
+and anchor sweeps use the engine's sequence and context feasibility limits."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -98,15 +66,7 @@ _T2_SKEW_PURE  = [2.0, 4.0, 8.0, 16.0]
 
 
 def _doubling(start: int, max_val: int, factor: float = 2.0) -> list[int]:
-    """Geometric grid from ``start`` up to ``max_val`` inclusive.
-
-    ``factor=2.0`` (the default) gives the classic doubling sequence.
-    Higher factors coarsen the grid (fewer samples, faster profile);
-    lower factors densify it. Adjacent values that round to the same
-    integer are deduplicated (can happen for factors close to 1.0 at
-    small scales). ``max_val`` is always appended when it isn't
-    already on the grid so the top of the sweep is never missed.
-    """
+    """Geometric grid from ``start`` up to ``max_val`` inclusive."""
     if factor <= 1.0:
         raise ValueError(f"factor must be > 1.0; got {factor}")
     if max_val < start:
@@ -270,12 +230,9 @@ def _build_cases(args: ProfileArgs, limits) -> list[SkewCase]:
     grid = _build_grid(args, limits)
     cases: list[SkewCase] = []
 
-    # Tier 1 — factorial at representative skew.
-    # Per-n, the effective ratio list is the fractional ``_RATIO_VALS``
-    # plus ``nb_abs / n`` for each nb_abs in _NB_ABSOLUTE (dedup'd).
-    # This guarantees the "few heavy outliers" regime (nb=1..4) is
-    # measured for every batch size, not just for small n where the
-    # fractional ratios happen to collapse to nb≈1.
+    # Tier 1 — factorial at representative skew. Per-n, the effective ratio list is the
+    # fractional ``_RATIO_VALS`` plus ``nb_abs / n`` for each nb_abs in _NB_ABSOLUTE
+    # (dedup'd).
     for n in grid["n"]:
         ratios_for_n = set(grid["ratio"])
         for nb_abs in _NB_ABSOLUTE:

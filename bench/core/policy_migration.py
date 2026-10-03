@@ -1,9 +1,4 @@
-"""Transactional migration of completed prefixes between matching vLLM engines.
 
-This moves real KV bytes through bounded CPU staging buffers. It is a transport
-for queued successor calls, not live migration of an output stream. The source
-stays referenced until the coordinator acknowledges destination publication.
-"""
 from collections import deque
 from dataclasses import dataclass
 import asyncio

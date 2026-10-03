@@ -1,9 +1,4 @@
-"""vLLM v1 as shipped. The baseline every entrant must run.
 
-No pinning, no stamping, no placement rule: the engine's own LRU, FCFS and
-least-loaded. Classes rather than `None` so that "ran the baseline" and "no
-policy was configured" are different states in the log.
-"""
 from .base import KVPolicy, RoutingPolicy, SchedulingPolicy
 
 PAPER = "vLLM v1 baseline"

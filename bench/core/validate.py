@@ -1,20 +1,4 @@
-"""Compare a bench run against simulator output.
 
-Reads ``<bench_dir>/{meta.json,requests.jsonl,timeseries.csv}`` and the
-simulator's ``sim.csv`` / ``sim.log`` for the matching workload, derives
-TTFT / TPOT / end-to-end latency on both sides, and writes plots + a
-text summary into ``<bench_dir>/<output-subdir>/``.
-
-Latency definitions on both sides (kept consistent so diff% is meaningful):
-
-    TTFT   = first_token_ts - arrival_time      # incl. queueing
-    TPOT   = (last_token_ts - first_token_ts) / max(1, output_toks - 1)
-    e2e    = last_token_ts - arrival_time
-
-The simulator's ``sim.csv`` already exposes ``arrival``, ``end_time``, and
-the per-token ITL list directly; bench's ``requests.jsonl`` carries raw
-vLLM ``RequestStateStats`` timestamps from which we compute the same.
-"""
 
 from __future__ import annotations
 
@@ -150,15 +134,7 @@ def _load_bench_timeseries(path: Path) -> list[dict]:
 
 
 def _bench_latencies(reqs: list[dict]) -> tuple[list[float], list[float], list[float]]:
-    """Compute TTFT / TPOT / e2e in milliseconds from RequestStateStats.
-
-    vLLM currently records a mixed clock domain in ``requests.jsonl``:
-    ``arrival_time`` is wall-clock epoch seconds, while
-    ``queued_ts``/``scheduled_ts``/``first_token_ts``/``last_token_ts``
-    are monotonic engine timestamps. When that happens, use
-    ``queued_ts`` as the arrival anchor because it shares the same time
-    base as the rest of the per-request lifecycle.
-    """
+    """Compute TTFT / TPOT / e2e in milliseconds from RequestStateStats."""
     ttft, tpot, lat = [], [], []
     for r in reqs:
         arr, _ = _bench_arrival_ts(r)
@@ -242,14 +218,11 @@ def _sim_latencies(rows: list[dict]) -> tuple[list[float], list[float], list[flo
     return ttft, tpot, lat
 
 
-# Sim log lines look like::
-#
-#   [12.0s] Avg prompt throughput: 1234.0 tokens/s, Avg generation throughput: 5678.0 tokens/s
-#           ├─Running Instance[0]: 32 reqs, Waiting: 0 reqs, Total # 1 NPUs, ...
-#           ├─Running Instance[1]: 30 reqs, Waiting: 1 reqs, Total # 1 NPUs, ...
-#
-# We accumulate running/waiting across instances at each tick and emit one
-# row per timestamp.
+# Sim log lines look like:: [12.0s] Avg prompt throughput: 1234.0 tokens/s, Avg
+# generation throughput: 5678.0 tokens/s ├─Running Instance[0]: 32 reqs, Waiting: 0
+# reqs, Total # 1 NPUs, ... ├─Running Instance[1]: 30 reqs, Waiting: 1 reqs, Total # 1
+# NPUs, ... We accumulate running/waiting across instances at each tick and emit one row
+# per timestamp.
 _TS_RE = re.compile(r"^\[(\d+\.?\d*)s\]")
 _TPUT_RE = re.compile(
     r"Avg prompt throughput:\s*(\d+\.?\d*).*generation throughput:\s*(\d+\.?\d*)"

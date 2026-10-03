@@ -6,9 +6,7 @@ diff_based_evolution: true
 max_code_length: 20000
 language: python
 llm:
-  # OpenRouter; key from OPENAI_API_KEY (run_search.sbatch exports it).
-  # Cost at 2026-08-27 list prices, ~18k in / 3k out per call, 50 calls:
-  # qwen3.7-plus $0.32/$1.28 per M, sonnet-5 $2/$10 per M -> ~$1.6 total.
+  # OpenRouter; supply credentials through OPENAI_API_KEY.
   api_base: https://openrouter.ai/api/v1
   models:
   - name: qwen/qwen3.7-plus

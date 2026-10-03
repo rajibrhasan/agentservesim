@@ -1,10 +1,4 @@
-"""Layer-pipelined physical KV exchange for the InferCept connector.
 
-The caller owns all tensors and reservations, including pinned host scratch.
-Raw views have shape [physical_blocks, bytes_per_block] for each layer segment.
-Scratch is separate from the allocatable host pool and must be budgeted at
-initialization. No source or destination may be recycled until finish() ACKs.
-"""
 from dataclasses import dataclass
 
 

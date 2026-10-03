@@ -1,15 +1,7 @@
-"""OpenEvolve evaluator: candidate retention policy in, scorecard out.
+"""OpenEvolve evaluator with staged simulation and candidate-result caching.
 
-Cascade:
-  stage 1  sandbox check, then one cell (training workload, tight KV,
-           mid arrival rate)
-  stage 2  two more cells (low arrival rate; unconstrained KV)
-  stage 3  the held-out workload
-combined_score at every stage is the mean over all cells run so far of
-  JCT_mean(stock tuple D) / JCT_mean(candidate)
-so 1.0 is parity with stock and higher is better. Per-cell results are
-cached by candidate hash so a later stage never reruns an earlier cell.
-"""
+Fitness is mean stock JCT / candidate JCT across evaluated cells.
+Candidates must pass the static observation-boundary check."""
 
 import hashlib
 import json

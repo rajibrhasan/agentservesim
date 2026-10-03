@@ -100,15 +100,8 @@ class DedupSink:
     # ------------------------------------------------------------------
 
     def preload(self) -> int:
-        """Seed the in-memory bucket from any existing CSV at
-        ``out_path``. Returns the number of rows ingested (0 when
-        the file is missing or empty).
-
-        Used for resume mode: after preload, ``prior_shot_keys()``
-        reports which shot identities are already covered so the
-        firing loop can skip them. The flush at the end of the run
-        will then contain both preserved and newly-measured rows.
-        """
+        """Seed the in-memory bucket from any existing CSV at ``out_path``. Returns
+        the number of rows ingested (0 when the file is missing or empty)."""
         if not self.out_path.exists():
             return 0
         count = 0

@@ -1,25 +1,4 @@
-"""Simulator-side routing executors for SAGA and Autellix.
 
-Both papers route with information the stock router does not have, and both
-already have their decision function written and shared with the engine
-adapters. What is missing on the simulator side is the *observation* half --
-what each instance is carrying right now -- and, for SAGA, actually moving a
-queued turn when a steal is agreed. That is what lives here.
-
-SAGA (`policies.saga_runtime.SagaPlacement`, section 5.2): route a session to
-the worker that already holds its context while that worker is below the
-affinity limit, else to the least loaded; and let an idle worker steal the
-oldest queued session from a worker carrying more than `load_ratio` times its
-load. Only a *waiting* turn is ever moved. Migrating a generating call is out
-of scope on every path in this repository, and stealing one here would be a
-different mechanism wearing the same name.
-
-Autellix (section 5, request routing): a short prompt goes to whichever engine
-has the fewest outstanding calls, because its prefill is cheap enough that
-locality does not pay for the imbalance; a long prompt goes back to the
-program's established home so its prefix is still there. The threshold is the
-paper's data-dependent knob and is an explicit input here.
-"""
 from policies.saga_runtime import SagaPlacement, WorkerObservation
 
 NS = 1e9

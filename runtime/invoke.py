@@ -1,16 +1,3 @@
-"""Run one cell in the container and return a scorecard.
-
-Split out of evolve/simrun.py on 2026-09-12. This is the simulator's invocation
-surface: the one place that builds the command line, so every caller -- the
-policy search, the grid, the arena runner -- issues byte-identical invocations.
-Two callers that each assembled their own flags would silently be measuring
-two different simulators.
-
-Nothing here knows about evolution. A candidate policy reaches the simulator
-through `harness_root`, which the caller stages; this module only passes the
-path through.
-"""
-
 import os
 import shutil
 import statistics

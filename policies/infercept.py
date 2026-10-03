@@ -1,9 +1,4 @@
-"""Gap-start preserve/discard policy and optional simulator copy enqueue.
 
-The native InferCept iteration controller lives in bench.core.infercept_scheduler.
-This callback alone is not a full InferCept implementation. It must never
-allocate a transfer budget from a forward pass that has already completed.
-"""
 from typing import Callable, Optional
 
 from .base import KVPolicy
@@ -14,27 +9,6 @@ PAPER = "InferCept 2402.01869"
 
 
 class InferceptKV(KVPolicy):
-    """InferCept-style min-waste retain-vs-evict callback: at each
-    gap start, retain (protect) if the predicted occupancy waste of
-    keeping the context resident is below the recompute waste of
-    re-prefilling it, else evict now.
-
-    Wastes come from waste_model (Eq. 2 vs Eq. 4) with a measured
-    hardware profile. The gap prediction comes from the per-tool
-    predictor (fallback: default_gap_s). load_probe, when given,
-    returns (inflight_tokens, running_ctx_tokens) for the discard
-    side; without it the model assumes an idle engine, which makes
-    recompute cheapest and eviction most likely (conservative for
-    retention). All inputs and both scores are logged in the
-    decision's info dict, so the simulator mirror replays the
-    comparison. Native session swapping is implemented by the engine
-    controller, independently of this callback.
-
-    The protect deadline is now + predicted gap: past it the blocks
-    stay hit-able but become first reclaim candidates under pressure
-    (expired-first valve), which degrades gracefully when the gap
-    prediction was short.
-    """
 
     @classmethod
     def from_config(cls, cfg):
@@ -96,12 +70,7 @@ class InferceptKV(KVPolicy):
 
 
 def make_kv(min_waste_profile=None, default_gap_s=1.0, **_):
-    """InferCept needs a measured waste profile, not a scalar knob.
-
-    Here rather than in the registry because a paper's construction is the
-    paper's business: the registry should not have to know that this one reads
-    a JSON file while Continuum takes a float.
-    """
+  
     if min_waste_profile is None:
         raise ValueError(
             "infercept needs --min-waste-profile: its decision is a comparison "

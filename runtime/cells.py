@@ -1,15 +1,3 @@
-"""The cell catalogue: what trace, on what cluster configuration.
-
-Split out of evolve/simrun.py on 2026-09-12. A cell is the simulator-side
-equivalent of an arena cell -- a workload paired with a memory budget -- and it
-is data, so it belongs somewhere both the policy search and the arena runner
-can read without importing the other.
-
-`ARENA_CELLS` maps arena cell names onto entries here. It lives on this side
-deliberately: which cluster JSON reproduces a given KV pool is a fact about
-THIS simulator, and a benchmark that carried that table would be encoding one
-entrant's file layout into its own source.
-"""
 
 import os
 
@@ -171,14 +159,10 @@ CELLS.update({
 
 LB_CELLS = [c for c in CELLS if c.startswith("lb")]
 
-# The standard workload matrix: three agentic workloads x five arrival rates,
-# every experiment from 2026-09-15 on. One program count per workload so a
-# number is comparable across rates without renormalising, and one trace
-# family per workload so "the BFCL cell" names exactly one file. Contexts are
-# capped at 100k tokens, under the 114,768-token pool the RTX config reports,
-# so no turn is rejected by max_model_len. Sources and the five derived rate
-# files sit together under each directory; `src.jsonl` is the unsplit trace
-# each rate was sampled from.
+# The standard workload matrix: three agentic workloads x five arrival rates, every
+# experiment from 2026-09-15 on. One program count per workload so a number is
+# comparable across rates without renormalising, and one trace family per workload so
+# "the BFCL cell" names exactly one file.
 STD = os.path.join(MAS, "workloads", "standard")
 _RATES = ("0.02", "0.04", "0.06", "0.08", "0.1")
 CELLS.update({
@@ -216,16 +200,7 @@ def for_arena(name):
 
 
 def resolve(cell):
-    """(dataset, cluster_config) for a cell NAME or an inline `trace:config`.
-
-    A registered name is a convenience for workloads used repeatedly. It must
-    not be the only way in: the names in `CELLS` point at traces this project
-    generated, and requiring someone to edit this file before they can search
-    on their own workload makes their workload a second-class input.
-
-        resolve("rtx70b_swe50_j0.02")                      # registered
-        resolve("my/trace.jsonl:configs/cluster/mine.json")  # anything
-    """
+    """(dataset, cluster_config) for a cell NAME or an inline `trace:config`."""
     if cell in CELLS:
         return CELLS[cell]
     if ":" in cell:
